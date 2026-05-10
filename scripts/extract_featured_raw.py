@@ -110,42 +110,34 @@ def process_files(base_dir):
     if not raw_dir.exists():
         print(f"\nError: 'raw' subdirectory does not exist in '{base_dir}'")
         return False
-    
-    # Find 'export' subdirectory (case-insensitive)
-    raw_export_dir = None
+
+    print(f"Raw directory: {raw_dir}")
+    print(f"Featured directory: {featured_dir}")
+
+    # Step 1: Extract all file names (without extensions) from raw directory and all its subdirectories
+    print(f"\n{'Step 1: Scanning raw directory (all subdirectories)':-<50}")
+    raw_file_names = set()
+
+    # Collect dirs to scan: raw/ itself + all subdirectories
+    dirs_to_scan = [raw_dir]
     try:
-        for subdir in raw_dir.iterdir():
-            if subdir.is_dir() and subdir.name.lower() == 'export':
-                raw_export_dir = subdir
-                break
+        for entry in raw_dir.iterdir():
+            if entry.is_dir():
+                dirs_to_scan.append(entry)
+                print(f"   📂 Found subdirectory: {entry.name}")
     except PermissionError:
         print(f"Error: Permission denied accessing '{raw_dir}'")
         return False
-    
-    if raw_export_dir is None:
-        print(f"\nError: 'export' subdirectory (case-insensitive) not found in '{raw_dir}'")
-        print("Please ensure the target directory contains a 'raw/export' or 'raw/Export' subdirectory.")
-        return False
-    
-    print(f"Raw export directory: {raw_export_dir}")
-    print(f"Featured directory: {featured_dir}")
-    
-    # Step 1: Extract all file names (without extensions) from raw/export directory
-    print(f"\n{'Step 1: Scanning raw/export directory':-<50}")
-    raw_file_names = set()
-    
-    try:
-        for file_path in raw_export_dir.iterdir():
-            if file_path.is_file():
-                # Get filename without extension (lowercase for case-insensitive matching)
-                file_stem = file_path.stem.lower()
-                # Skip system files like .DS_Store
-                if not file_stem.startswith('.'):
-                    raw_file_names.add(file_stem)
-                    print(f"   ✓ Found: {file_path.name}")
-    except PermissionError:
-        print(f"Error: Permission denied accessing '{raw_export_dir}'")
-        return False
+
+    for scan_dir in dirs_to_scan:
+        try:
+            for file_path in scan_dir.iterdir():
+                if file_path.is_file():
+                    file_stem = file_path.stem.lower()
+                    if not file_stem.startswith('.'):
+                        raw_file_names.add(file_stem)
+        except PermissionError:
+            print(f"   ⚠️  Permission denied: {scan_dir}")
     
     if not raw_file_names:
         print("   Warning: No valid files found in raw directory.")
