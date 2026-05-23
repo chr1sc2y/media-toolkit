@@ -199,8 +199,32 @@ def render_sheet(
     sheet_path: Path,
     cols: int,
     rows: int,
+    tile_width: int,
+    tile_height: int,
     quality: int,
 ) -> None:
+    inputs = []
+    labels = []
+    layout = []
+    padding = 8
+    margin = 12
+
+    for index in range(1, cols * rows + 1):
+        inputs.extend(["-i", str(temp_dir / f"tile_{index:04d}.jpg")])
+        labels.append(f"[{index - 1}:v]")
+        col = (index - 1) % cols
+        row = (index - 1) // cols
+        layout.append(f"{col * (tile_width + padding)}_{row * (tile_height + padding)}")
+
+    width = cols * tile_width + (cols - 1) * padding + 2 * margin
+    height = rows * tile_height + (rows - 1) * padding + 2 * margin
+    filter_complex = (
+        f"{''.join(labels)}"
+        f"xstack=inputs={cols * rows}:layout={'|'.join(layout)}:fill=white,"
+        f"pad={width}:{height}:{margin}:{margin}:white,"
+        f"setsar=1,crop={width}:{height}:0:0[out]"
+    )
+
     run_ffmpeg(
         [
             ffmpeg,
@@ -208,12 +232,11 @@ def render_sheet(
             "-loglevel",
             "error",
             "-y",
-            "-framerate",
-            "1",
-            "-i",
-            str(temp_dir / "tile_%04d.jpg"),
-            "-vf",
-            f"tile={cols}x{rows}:margin=12:padding=8:color=white",
+            *inputs,
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[out]",
             "-frames:v",
             "1",
             "-q:v",
@@ -290,7 +313,16 @@ def generate_contact_sheets(args) -> int:
                 tile_path = temp_dir / f"tile_{pos:04d}.jpg"
                 render_blank(ffmpeg, tile_path, args.thumb_width, args.thumb_height, args.quality)
 
-            render_sheet(ffmpeg, temp_dir, sheet_path, args.cols, args.rows, args.quality)
+            render_sheet(
+                ffmpeg,
+                temp_dir,
+                sheet_path,
+                args.cols,
+                args.rows,
+                args.thumb_width,
+                args.thumb_height,
+                args.quality,
+            )
             print(f"  {sheet_path.name}: {len(chunk)} image(s)")
 
     print(f"Manifest: {output_dir / 'manifest.tsv'}")
