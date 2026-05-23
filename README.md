@@ -28,6 +28,20 @@ python3 convert_png_to_jpg.py
 
 Converts PNG to JPG format.
 
+### Contact Sheet Generation
+
+```bash
+python3 scripts/generate_contact_sheets.py /path/to/photos --export-only --exclude-dir PixCake
+```
+
+Generates numbered contact sheet thumbnails and a `manifest.tsv` mapping sheet
+positions back to source files.
+
+- Recursively scans common image formats
+- `--export-only` limits the scan to files under `Export`/`export` directories
+- `--exclude-dir` can be repeated to ignore tool output directories
+- Output defaults to `contact_sheets/`
+
 ## Project Structure
 
 - `src/` - Core implementation modules
