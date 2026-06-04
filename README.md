@@ -42,6 +42,28 @@ positions back to source files.
 - `--exclude-dir` can be repeated to ignore tool output directories
 - Output defaults to `contact_sheets/`
 
+### Media File Organization
+
+```bash
+python3 scripts/organize.py /path/to/sony/import
+python3 scripts/organize.py /path/to/sony/import --dry-run
+python3 scripts/organize.py /path/to/import --type xmp:xmp
+python3 scripts/organize.py
+```
+
+Recursively scans every directory under the input path and moves camera media
+files into per-directory type subdirectories. By default it prints a final
+summary grouped by file type instead of one line per moved file.
+
+- HEIF extensions: `.hif`, `.heif`, `.heic`
+- RAW extensions include Sony `.arw`, Fuji `.raf`, iPhone/Adobe `.dng`, and
+  other common camera RAW formats
+- Existing `hif/` and `raw/` directories are skipped to avoid nested output
+- Filename conflicts are preserved by appending `_1`, `_2`, etc.
+- `--type folder:ext,ext` adds or replaces a type mapping, for example
+  `--type xmp:xmp`
+- `--verbose` prints every individual move when you want the full log
+
 ## Project Structure
 
 - `src/` - Core implementation modules
