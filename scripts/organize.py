@@ -12,6 +12,7 @@ If no directory is provided, the script prompts for one interactively.
 
 import argparse
 import os
+import shlex
 import shutil
 import sys
 from collections import defaultdict
@@ -43,6 +44,39 @@ FILE_TYPES = {
     }),
 }
 OUTPUT_DIRS = frozenset(FILE_TYPES)
+
+
+def _normalize_directory_input(raw_input: str) -> Path:
+    """
+    Normalize a user-provided directory string.
+
+    Handles:
+    - Surrounding quotes (single or double)
+    - Shell-style backslash escapes (e.g. paths copied from terminal prompts
+      or history that contain "\\ " for spaces, "\\~" etc.)
+    - Tilde expansion (~)
+
+    This is especially useful in interactive mode where users often paste
+    escaped paths directly from their shell.
+    """
+    s = raw_input.strip()
+
+    # Remove one layer of surrounding matching quotes if present.
+    if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
+        s = s[1:-1]
+
+    # If the (now unquoted) string still contains backslashes, interpret
+    # it as a shell-escaped path.
+    if '\\' in s:
+        try:
+            parts = shlex.split(s)
+            if parts:
+                s = parts[0]
+        except ValueError:
+            # Malformed; keep what we have after quote stripping
+            pass
+
+    return Path(s).expanduser().resolve()
 
 
 @dataclass
@@ -152,14 +186,19 @@ def organize_directory(
 
 def get_target_directory(args: argparse.Namespace) -> Path:
     if args.directory:
-        return Path(args.directory).expanduser().resolve()
+        return _normalize_directory_input(args.directory)
 
-    user_input = input(
+    print(
+        "  (Tip: you can paste paths copied from your terminal, "
+        "including ones shown with \\ escapes for spaces.)"
+    )
+    raw_input = input(
         "Enter the directory to organize (press Enter for current directory): "
-    ).strip().strip("'\"")
+    )
+    user_input = raw_input.strip()
     if not user_input:
         return Path.cwd().resolve()
-    return Path(user_input).expanduser().resolve()
+    return _normalize_directory_input(raw_input)
 
 
 def parse_args() -> argparse.Namespace:

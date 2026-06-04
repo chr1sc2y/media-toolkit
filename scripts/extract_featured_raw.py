@@ -2,25 +2,31 @@
 """
 Featured Files Extractor
 
-This script extracts featured files based on raw/export directory contents:
-1. Extract all file names (without extensions) from the 'raw/export' subdirectory
-2. Find all files with matching names (case-insensitive) in the target directory 
+This script extracts featured files based on raw directory contents:
+1. Extract all file names (without extensions) recursively from the 'raw' subdirectory (and any subdirs)
+2. Find all files with matching names (case-insensitive) in the target/base directory 
    and common image subdirectories (heif, hif, jpeg, jpg, etc.)
 3. Copy these matching files to a new 'featured' subdirectory
 
+Supports recursive mode (-r) to process every subdirectory tree that contains its own 'raw' folder.
+
 Usage:
-    python extract_featured_raw.py [directory_path]
+    python extract_featured_raw.py [directory_path] [--recursive | -r]
     
     If no directory is provided, the script will prompt for one interactively.
+    With --recursive, it will find and process every subdirectory containing a "raw" folder.
     
 Examples:
     python extract_featured_raw.py /path/to/photos
     python extract_featured_raw.py "C:\\Users\\Photos\\Event"
     python extract_featured_raw.py  # Interactive mode
+    python extract_featured_raw.py /path/to/event_root --recursive
+    python extract_featured_raw.py -r  # Interactive + recursive over subdirs
 """
 
 import argparse
 import os
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -30,63 +36,177 @@ from pathlib import Path
 IMAGE_SUBDIRS = ['', 'heif', 'hif', 'jpeg', 'jpg', 'HEIF', 'HIF', 'JPEG', 'JPG']
 
 
+def _normalize_directory_input(raw_input: str) -> Path:
+    """
+    Normalize a user-provided directory string.
+
+    Handles:
+    - Surrounding quotes (single or double)
+    - Shell-style backslash escapes (e.g. paths copied from terminal prompts
+      or history that contain "\ " for spaces, "\~" etc.)
+    - Tilde expansion (~)
+
+    This is especially useful in interactive mode where users often paste
+    escaped paths directly.
+    """
+    s = raw_input.strip()
+
+    # First remove one layer of surrounding quotes if present (users sometimes paste
+    # ".... " or '....' into the prompt, especially when copying from other tools).
+    if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
+        s = s[1:-1]
+
+    # If the (now unquoted) string still contains backslashes, interpret it as a
+    # shell-escaped path (the common case when pasting from zsh/bash prompts,
+    # command history, or "ls" output that shows escapes).
+    if '\\' in s:
+        try:
+            parts = shlex.split(s)
+            if parts:
+                s = parts[0]
+        except ValueError:
+            # Malformed; keep what we have after quote stripping
+            pass
+
+    return Path(s).expanduser().resolve()
+
+
+def _get_image_search_directories(base_dir: Path) -> list[Path]:
+    """
+    Return the directories to search for candidate featured files.
+
+    - Always includes the base directory itself (unless it is named 'raw' or 'featured').
+    - Plus any direct subdirectories whose name (case-insensitive) is in the
+      IMAGE_SUBDIRS whitelist (e.g. 'hif', 'jpg', 'HEIF', etc.).
+
+    On case-insensitive filesystems (macOS, Windows), this deduplicates so that
+    'hif' and 'HIF' (which refer to the same physical directory) are not both
+    scanned. The real on-disk directory name/casing is preserved for display.
+
+    This avoids duplicate "Match" lines and spurious "Skipped (already exists)"
+    messages when the only reason for duplicates is case variants of the folder name.
+    """
+    search_dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    # 1. The base directory itself
+    if base_dir.exists() and base_dir.is_dir():
+        if base_dir.name.lower() not in ('raw', 'featured'):
+            real = base_dir.resolve()
+            if real not in seen:
+                seen.add(real)
+                search_dirs.append(base_dir)
+
+    # 2. Whitelisted image subdirectories (discovered via actual iterdir so we get real casing)
+    wanted = {d.lower() for d in IMAGE_SUBDIRS if d}
+    try:
+        for entry in base_dir.iterdir():
+            if entry.is_dir():
+                name_l = entry.name.lower()
+                if name_l in wanted and name_l not in ('raw', 'featured'):
+                    real = entry.resolve()
+                    if real not in seen:
+                        seen.add(real)
+                        search_dirs.append(entry)
+    except PermissionError:
+        pass
+
+    return search_dirs
+
+
 def get_target_directory():
     """
     Get the target directory from command line arguments or interactive user input.
     
     Returns:
-        Path: The validated target directory path
+        tuple[Path, bool]: The validated target directory path and whether recursive mode is enabled
     """
     parser = argparse.ArgumentParser(
-        description='Extract featured files based on raw directory contents',
+        description='Extract featured files based on raw directory contents (supports recursive processing of multiple event dirs)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s /path/to/photos              # Use specific directory
   %(prog)s "C:\\Photos\\Event"           # Windows path with spaces
   %(prog)s                             # Interactive mode
+  %(prog)s /path/to/root -r             # Recursive: process all subdirs with raw/
+  %(prog)s -r                           # Interactive + recursive
         """
     )
     parser.add_argument(
         'directory', 
         nargs='?', 
-        help='Target directory path containing the "raw/export" subdirectory (optional - will prompt if not provided)'
+        help='Target directory path. In recursive mode, finds all subdirs under it containing "raw" (optional - will prompt if not provided)'
     )
     parser.add_argument(
         '--version', 
         action='version', 
-        version='%(prog)s 1.5'
+        version='%(prog)s 1.6'
+    )
+    parser.add_argument(
+        '--recursive', '-r',
+        action='store_true',
+        help='Recursively find and process all subdirectories (including the target) that contain a "raw" subdirectory'
     )
     
     args = parser.parse_args()
     
     if args.directory:
         # Command line argument provided
-        target_dir = Path(args.directory).resolve()
+        target_dir = _normalize_directory_input(args.directory)
         if not target_dir.exists():
             print(f"Error: Directory '{target_dir}' does not exist.")
             sys.exit(1)
         if not target_dir.is_dir():
             print(f"Error: '{target_dir}' is not a directory.")
             sys.exit(1)
-        return target_dir
+        return target_dir, args.recursive
     else:
         # Interactive mode: prompt user for directory
         print("Interactive mode: Please specify the target directory.")
+        print("  (Tip: you can paste paths copied from your terminal, including ones shown with \\ escapes for spaces.)")
         while True:
-            user_input = input("Enter the target directory path (or press Enter for current directory): ").strip().strip('\'"')
+            raw_input = input("Enter the target directory path (or press Enter for current directory): ")
+            user_input = raw_input.strip()
             
             if not user_input:
                 target_dir = Path.cwd()
                 print(f"Using current directory: {target_dir}")
-                return target_dir
+                return target_dir, args.recursive
             else:
-                target_dir = Path(user_input).expanduser().resolve()
+                target_dir = _normalize_directory_input(raw_input)
                 if target_dir.exists() and target_dir.is_dir():
-                    return target_dir
+                    return target_dir, args.recursive
                 else:
                     print(f"Error: '{target_dir}' does not exist or is not a directory.")
                     print("Please try again or press Enter to use current directory.")
+
+
+def find_directories_with_raw(root: Path) -> list[Path]:
+    """
+    Recursively find all directories under root (including root itself) that
+    directly contain a 'raw' subdirectory. Prunes traversal into raw/ and
+    featured/ to avoid spurious matches.
+    
+    Args:
+        root (Path): Starting directory to search from.
+        
+    Returns:
+        list[Path]: List of base directories each containing a 'raw' folder.
+    """
+    found: list[Path] = []
+    root = Path(root).resolve()
+    for dirpath, dirnames, _ in os.walk(root):
+        current = Path(dirpath)
+        raw_dir = current / "raw"
+        if raw_dir.is_dir():
+            found.append(current)
+            # Do not descend into raw/ or featured/ for other potential bases
+            dirnames[:] = [
+                d for d in dirnames if d.lower() not in ("raw", "featured")
+            ]
+    return sorted(found)
+
 
 def process_files(base_dir):
     """
@@ -114,30 +234,19 @@ def process_files(base_dir):
     print(f"Raw directory: {raw_dir}")
     print(f"Featured directory: {featured_dir}")
 
-    # Step 1: Extract all file names (without extensions) from raw directory and all its subdirectories
-    print(f"\n{'Step 1: Scanning raw directory (all subdirectories)':-<50}")
+    # Step 1: Extract all file names (without extensions) from raw directory and all its subdirectories (recursive)
+    print(f"\n{'Step 1: Scanning raw directory (recursively all subdirectories)':-<50}")
     raw_file_names = set()
 
-    # Collect dirs to scan: raw/ itself + all subdirectories
-    dirs_to_scan = [raw_dir]
     try:
-        for entry in raw_dir.iterdir():
-            if entry.is_dir():
-                dirs_to_scan.append(entry)
-                print(f"   📂 Found subdirectory: {entry.name}")
+        for file_path in raw_dir.rglob("*"):
+            if file_path.is_file():
+                file_stem = file_path.stem.lower()
+                if not file_stem.startswith('.'):
+                    raw_file_names.add(file_stem)
     except PermissionError:
         print(f"Error: Permission denied accessing '{raw_dir}'")
         return False
-
-    for scan_dir in dirs_to_scan:
-        try:
-            for file_path in scan_dir.iterdir():
-                if file_path.is_file():
-                    file_stem = file_path.stem.lower()
-                    if not file_stem.startswith('.'):
-                        raw_file_names.add(file_stem)
-        except PermissionError:
-            print(f"   ⚠️  Permission denied: {scan_dir}")
     
     if not raw_file_names:
         print("   Warning: No valid files found in raw directory.")
@@ -147,26 +256,20 @@ def process_files(base_dir):
     
     # Step 2: Find all matching files in target directory and image subdirectories
     print(f"\n{'Step 2: Finding matching files':-<50}")
-    print(f"   Searching in: base directory + {[d for d in IMAGE_SUBDIRS if d]}")
-    matching_files = []
-    searched_dirs = []
-    
-    for subdir in IMAGE_SUBDIRS:
-        if subdir:
-            search_dir = base_dir / subdir
-        else:
-            search_dir = base_dir
-        
-        # Skip if directory doesn't exist
-        if not search_dir.exists() or not search_dir.is_dir():
-            continue
-        
-        # Skip raw and featured directories
-        if search_dir.name.lower() in ('raw', 'featured'):
-            continue
-            
+    search_dirs = _get_image_search_directories(base_dir)
+    subdir_names = [d.name for d in search_dirs if d != base_dir]
+    if subdir_names:
+        print(f"   Searching in: base directory + {subdir_names}")
+    else:
+        print(f"   Searching in: base directory only")
+    matching_files: list[Path] = []
+    searched_dirs: list[Path] = []
+    seen_matches: set[Path] = set()  # dedup by real filesystem path (handles any edge cases)
+
+    for search_dir in search_dirs:
         searched_dirs.append(search_dir)
-        
+        is_base = (search_dir.resolve() == base_dir.resolve())
+
         try:
             for file_path in search_dir.iterdir():
                 if file_path.is_file():
@@ -176,12 +279,17 @@ def process_files(base_dir):
                     if file_stem.startswith('.'):
                         continue
                     if file_stem in raw_file_names:
+                        real = file_path.resolve()
+                        if real in seen_matches:
+                            continue
+                        seen_matches.add(real)
                         matching_files.append(file_path)
-                        # Show relative path for subdirectory files
-                        if subdir:
-                            print(f"   ✓ Match: {subdir}/{file_path.name}")
-                        else:
+
+                        # Show relative path for subdirectory files, using the *real* dir name on disk
+                        if is_base:
                             print(f"   ✓ Match: {file_path.name}")
+                        else:
+                            print(f"   ✓ Match: {search_dir.name}/{file_path.name}")
         except PermissionError:
             print(f"   ⚠️  Permission denied: {search_dir}")
             continue
@@ -244,16 +352,41 @@ def main():
     """Main function to orchestrate the file extraction process."""
     try:
         # Get target directory from user input or command line
-        base_dir = get_target_directory()
+        base_dir, recursive = get_target_directory()
         
-        # Process files
-        success = process_files(base_dir)
-        
-        if success:
-            print(f"\n🎉 Operation completed successfully!")
+        if recursive:
+            bases = find_directories_with_raw(base_dir)
+            print(f"\n{'='*60}")
+            print(f"RECURSIVE MODE ENABLED")
+            print(f"{'='*60}")
+            print(f"Root search directory: {base_dir}")
+            print(f"Found {len(bases)} directory(ies) containing a 'raw' subdirectory.")
+            
+            if not bases:
+                print("No directories with 'raw' found. Nothing to do.")
+                sys.exit(1)
+            
+            overall_success = True
+            for idx, b in enumerate(bases, 1):
+                print(f"\n--- [{idx}/{len(bases)}] {b} ---")
+                if not process_files(b):
+                    overall_success = False
+            
+            print(f"\n{'='*60}")
+            if overall_success:
+                print(f"🎉 All recursive operations completed successfully!")
+            else:
+                print(f"⚠️  Recursive operations completed with some issues.")
+                sys.exit(1)
         else:
-            print(f"\n⚠️  Operation completed with issues.")
-            sys.exit(1)
+            # Process files (original single-directory behavior)
+            success = process_files(base_dir)
+            
+            if success:
+                print(f"\n🎉 Operation completed successfully!")
+            else:
+                print(f"\n⚠️  Operation completed with issues.")
+                sys.exit(1)
             
     except KeyboardInterrupt:
         print(f"\n\n⏹️  Operation cancelled by user.")
