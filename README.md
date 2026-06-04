@@ -28,6 +28,18 @@ python3 convert_png_to_jpg.py
 
 Converts PNG to JPG format.
 
+### Image Size Cap Compression
+
+```bash
+python3 scripts/compress_images_under_size.py /path/to/photos
+python3 scripts/compress_images_under_size.py /path/to/photos --max-bytes 1048576
+python3 scripts/compress_images_under_size.py /path/to/photos --dry-run
+```
+
+Compresses oversized JPG/JPEG files in place until each processed image is under
+the requested byte cap. The script tries JPEG quality changes first, then gentle
+Lanczos downscaling only when needed.
+
 ### Contact Sheet Generation
 
 ```bash
