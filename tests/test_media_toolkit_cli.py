@@ -1,8 +1,10 @@
 import unittest
+import re
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from media_toolkit.cli import build_script_argv, resolve_command
+from media_toolkit.cli import build_script_argv, command_table, main, resolve_command
 
 
 class MediaToolkitCliTest(unittest.TestCase):
@@ -50,6 +52,28 @@ class MediaToolkitCliTest(unittest.TestCase):
         argv = build_script_argv(command, ["--describe"])
 
         self.assertEqual(argv, ["fill_missing_photo_locations.py", "--describe"])
+
+    def test_command_table_prioritizes_clear_long_commands(self):
+        table = command_table()
+
+        self.assertIn("mt featured", table)
+        self.assertIn("mt organize", table)
+        self.assertIn("mt fill-locations", table)
+        self.assertIsNone(re.search(r"^\s*mt f\s", table, re.MULTILINE))
+        self.assertIsNone(re.search(r"^\s*mt o\s", table, re.MULTILINE))
+        self.assertIsNone(re.search(r"^\s*mt loc\s", table, re.MULTILINE))
+
+    def test_mt_without_args_shows_clear_long_commands(self):
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            exit_code = main([])
+
+        output = stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("mt featured", output)
+        self.assertIn("mt organize", output)
+        self.assertIsNone(re.search(r"^\s*mt f\s", output, re.MULTILINE))
+        self.assertIsNone(re.search(r"^\s*mt o\s", output, re.MULTILINE))
 
 
 if __name__ == "__main__":

@@ -5,23 +5,27 @@ at `media-workflow` until the remote/local folder is renamed.
 
 ## Primary Interface
 
-Use `mt` as the primary interface for humans and agents. The old files in
-`scripts/` remain compatibility entry points, but new instructions should prefer
-`mt`.
+Use `mt` with clear long command names as the primary interface for humans and
+agents. The old files in `scripts/` remain compatibility entry points, but new
+instructions should prefer `mt`.
 
-| Frequent alias | Clear command | Purpose |
-| --- | --- | --- |
-| `mt f` | `mt featured` | Copy matching files from image folders into `featured/` based on stems found in `raw/`. |
-| `mt o` | `mt organize` | Move camera media into per-directory type folders such as `raw/` and `hif/`. |
-| `mt loc` | `mt fill-locations` | Plan or apply missing Apple Photos location fixes. |
-| `mt sheet` | `mt contact-sheet` | Generate numbered contact sheets and a manifest. |
-| `mt imgzip` | `mt image-compress` | Compress oversized JPG/JPEG files under a maximum byte size. |
-| `mt drone` | `mt drone` | Compress drone videos with the existing preset. |
-| `mt png` | `mt png-to-jpg` | Convert PNG images to JPG. |
+| Clear command | Purpose |
+| --- | --- |
+| `mt featured` | Copy matching files from image folders into `featured/` based on stems found in `raw/`. |
+| `mt organize` | Move camera media into per-directory type folders such as `raw/` and `hif/`. |
+| `mt fill-locations` | Plan or apply missing Apple Photos location fixes. |
+| `mt contact-sheet` | Generate numbered contact sheets and a manifest. |
+| `mt image-compress` | Compress oversized JPG/JPEG files under a maximum byte size. |
+| `mt drone` | Compress drone videos with the existing preset. |
+| `mt png-to-jpg` | Convert PNG images to JPG. |
 
 Directory-based commands default to the current directory when no path is
-provided. `mt loc` operates on Apple Photos and does not use the current
-directory as a media input.
+provided. `mt fill-locations` operates on Apple Photos and does not use the
+current directory as a media input.
+
+Short aliases such as `mt f`, `mt o`, and `mt loc` exist only as compatibility
+shortcuts. Do not use them in documentation or generated instructions unless the
+user explicitly asks for aliases.
 
 ## Development Rules
 

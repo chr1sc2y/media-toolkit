@@ -14,37 +14,36 @@ After that, run `mt` from any directory:
 
 ```bash
 mt
-mt f /path/to/photos
-mt f
-mt o /path/to/import --dry-run
-mt o
-mt loc --describe
-mt sheet /path/to/photos --export-only
-mt imgzip /path/to/photos --max-bytes 1048576
+mt featured /path/to/photos
+mt featured
+mt organize /path/to/import --dry-run
+mt organize
+mt fill-locations --describe
+mt contact-sheet /path/to/photos --export-only
+mt image-compress /path/to/photos --max-bytes 1048576
 ```
 
 When a directory-based command is run without a path, `mt` uses the current
-directory. Long command names are also available: `featured`, `organize`,
-`fill-locations`, `contact-sheet`, and `image-compress`.
+directory.
 
 ## Command Reference
 
-`mt` is the stable human-facing command. Short aliases are for frequent manual
-use; long names are for readability in docs, scripts, and agent instructions.
+`mt` is the stable human-facing command. Use clear long command names in docs,
+scripts, and agent instructions.
 
-| Short | Long command | Meaning | Default path behavior |
-| --- | --- | --- | --- |
-| `mt f` | `mt featured` | Copy files whose names match items in `raw/` into `featured/`. | Uses current directory when no path is passed. |
-| `mt o` | `mt organize` | Move camera media into type folders such as `raw/` and `hif/`. | Uses current directory when no path is passed. |
-| `mt loc` | `mt fill-locations` | Plan or apply missing Apple Photos geolocation fixes. | Works on Apple Photos, not the current directory. |
-| `mt sheet` | `mt contact-sheet` | Generate contact sheet images and `manifest.tsv`. | Uses current directory when no path is passed. |
-| `mt imgzip` | `mt image-compress` | Compress oversized JPG/JPEG files under a byte cap. | Uses current directory when no path is passed. |
-| `mt drone` | `mt drone` | Compress drone `.mp4` video with the DJI-oriented preset. | Uses current directory when no path is passed. |
-| `mt png` | `mt png-to-jpg` | Convert `.png` images to `.jpg`. | Uses current directory when no path is passed. |
+| Command | Meaning | Default path behavior |
+| --- | --- | --- |
+| `mt featured` | Copy files whose names match items in `raw/` into `featured/`. | Uses current directory when no path is passed. |
+| `mt organize` | Move camera media into type folders such as `raw/` and `hif/`. | Uses current directory when no path is passed. |
+| `mt fill-locations` | Plan or apply missing Apple Photos geolocation fixes. | Works on Apple Photos, not the current directory. |
+| `mt contact-sheet` | Generate contact sheet images and `manifest.tsv`. | Uses current directory when no path is passed. |
+| `mt image-compress` | Compress oversized JPG/JPEG files under a byte cap. | Uses current directory when no path is passed. |
+| `mt drone` | Compress drone `.mp4` video with the DJI-oriented preset. | Uses current directory when no path is passed. |
+| `mt png-to-jpg` | Convert `.png` images to `.jpg`. | Uses current directory when no path is passed. |
 
-Agent note: prefer the long command name in generated instructions unless the
-user explicitly asks for the shortest command. Prefer `--dry-run` when a command
-supports it and the task is exploratory.
+Compatibility aliases still work for interactive use, but they are intentionally
+not the documented interface: `mt f`, `mt o`, `mt loc`, `mt sheet`, `mt imgzip`,
+and `mt png`.
 
 ### Drone Video Compression
 
@@ -64,8 +63,8 @@ Compress drone videos to 1080p @ 15Mbps while keeping original frame rate.
 ### Image Format Conversion
 
 ```bash
-mt png /path/to/images
-mt png
+mt png-to-jpg /path/to/images
+mt png-to-jpg
 ```
 
 Converts PNG to JPG format.
@@ -73,9 +72,9 @@ Converts PNG to JPG format.
 ### Image Size Cap Compression
 
 ```bash
-mt imgzip /path/to/photos
-mt imgzip /path/to/photos --max-bytes 1048576
-mt imgzip --dry-run
+mt image-compress /path/to/photos
+mt image-compress /path/to/photos --max-bytes 1048576
+mt image-compress --dry-run
 ```
 
 Compresses oversized JPG/JPEG files in place until each processed image is under
@@ -85,8 +84,8 @@ Lanczos downscaling only when needed.
 ### Contact Sheet Generation
 
 ```bash
-mt sheet /path/to/photos --export-only --exclude-dir PixCake
-mt sheet --export-only --exclude-dir PixCake
+mt contact-sheet /path/to/photos --export-only --exclude-dir PixCake
+mt contact-sheet --export-only --exclude-dir PixCake
 ```
 
 Generates numbered contact sheet thumbnails and a `manifest.tsv` mapping sheet
@@ -100,10 +99,10 @@ positions back to source files.
 ### Media File Organization
 
 ```bash
-mt o /path/to/sony/import
-mt o /path/to/sony/import --dry-run
-mt o /path/to/import --type xmp:xmp
-mt o
+mt organize /path/to/sony/import
+mt organize /path/to/sony/import --dry-run
+mt organize /path/to/import --type xmp:xmp
+mt organize
 ```
 
 Recursively scans every directory under the input path and moves camera media
@@ -122,10 +121,10 @@ summary grouped by file type instead of one line per moved file.
 ### Apple Photos Missing Location Fill
 
 ```bash
-mt loc --describe
-mt loc --force-refresh
-mt loc --start 2026-06-01 --end 2026-06-07 --force-refresh
-mt loc --start 2026-06-01 --end 2026-06-07 --apply
+mt fill-locations --describe
+mt fill-locations --force-refresh
+mt fill-locations --start 2026-06-01 --end 2026-06-07 --force-refresh
+mt fill-locations --start 2026-06-01 --end 2026-06-07 --apply
 ```
 
 Finds Apple Photos items without a location and plans a location fill from

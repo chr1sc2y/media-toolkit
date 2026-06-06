@@ -126,8 +126,7 @@ def build_script_argv(command: Command, args: list[str]) -> list[str]:
 def command_table() -> str:
     lines = []
     for command in COMMANDS:
-        alias_text = ", ".join(command.aliases)
-        lines.append(f"  {command.canonical:<16} ({alias_text})  {command.help}")
+        lines.append(f"  mt {command.canonical:<16} {command.help}")
     return "\n".join(lines)
 
 
@@ -136,7 +135,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         prog="mt",
         description="Media Toolkit command launcher.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f"Commands:\n{command_table()}\n\nExamples:\n  mt f\n  mt o --dry-run\n  mt loc --describe\n  mt sheet --export-only",
+        epilog=(
+            f"Commands:\n{command_table()}\n\n"
+            "Examples:\n"
+            "  mt featured\n"
+            "  mt organize --dry-run\n"
+            "  mt fill-locations --describe\n"
+            "  mt contact-sheet --export-only"
+        ),
     )
     parser.add_argument("command", nargs="?", help="Command or alias to run.")
     parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to the command.")
