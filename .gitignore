@@ -2,3 +2,6 @@ __pycache__/
 log/
 .DS_Store
 .claude/
+outputs/
+work/
+*.egg-info/
