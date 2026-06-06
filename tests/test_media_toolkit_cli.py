@@ -13,6 +13,14 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("drone").script_name, "compress_drone_video.py")
         self.assertEqual(resolve_command("png").script_name, "png_to_jpg.py")
 
+    def test_resolves_long_commands(self):
+        self.assertEqual(resolve_command("featured").script_name, "extract_featured_raw.py")
+        self.assertEqual(resolve_command("organize").script_name, "organize.py")
+        self.assertEqual(resolve_command("fill-locations").script_name, "fill_missing_photo_locations.py")
+        self.assertEqual(resolve_command("contact-sheet").script_name, "generate_contact_sheets.py")
+        self.assertEqual(resolve_command("image-compress").script_name, "compress_images_under_size.py")
+        self.assertEqual(resolve_command("png-to-jpg").script_name, "png_to_jpg.py")
+
     def test_adds_current_directory_for_directory_commands_without_positionals(self):
         with patch("pathlib.Path.cwd", return_value=Path("/tmp/photos")):
             command = resolve_command("o")
