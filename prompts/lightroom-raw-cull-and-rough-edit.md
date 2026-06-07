@@ -12,10 +12,15 @@ and optional sibling preview folders such as `hif/`, `jpg/`, or `jpeg/`.
 <PASTE_PHOTO_DIRECTORY_HERE>
 
 范围：
+- 如果照片目录尚未整理，先执行媒体整理流程：将 HIF/HEIF/HEIC 放入 hif/，将 RAW 和已有 .xmp sidecar 放入 raw/。
 - 只处理照片目录下 raw/ 里的 RAW 文件。
 - 不修改 RAW 本体，不删除文件。
 - 将 Lightroom / Camera Raw 可读取的结果写入同名 .xmp sidecar。
 - 如果有同名 hif/jpg/jpeg 预览文件，可以用它们辅助判断构图、清晰度、表情和光线，但最终只给 raw/ 里的 RAW 写元数据。
+- 默认分离人像：把人像 RAW 放入 人像/raw/，对应 HIF/JPG/JPEG 预览也放入 人像/hif/ 或 人像/jpg/。
+- 人像和非人像都参与后续评星、标签和基础预设写入；人像使用更温和的 Texture/Clarity/Dehaze，避免皮肤和毛发显脏。
+- 生成预览时可以使用工具内部临时转换缓存，但流程结束前必须删除；不要把 review_jpg/ 或类似临时转换图留在照片目录。
+- 默认在原照片目录下输出一张低分辨率总览图 _contact_sheet.jpg。总览图需要把 人像 和 其他/非人像 分成两个区块，方便分别查看。
 
 筛选规则：
 - 使用星级，不使用旗标。
@@ -71,6 +76,9 @@ XMP 写入建议：
 - 汇总星级数量。
 - 列出 >=4星 的文件名。
 - 说明哪些 Lightroom 字段已经写入，哪些字段可能需要 Lightroom 读入后重新计算或确认。
+- 说明是否存在人像目录，以及人像 RAW/HIF 数量。
+- 确认临时 review_jpg/ 已删除。
+- 如果生成了接触表，说明 _contact_sheet.jpg 的位置。
 ```
 
 ## Usage
@@ -85,4 +93,3 @@ directory:
 
 Keep photos in their original travel/import directory. Do not copy large photo
 folders into this repository.
-

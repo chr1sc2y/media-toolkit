@@ -21,11 +21,13 @@ IMAGE_EXTS = {
     ".heic",
     ".jpeg",
     ".jpg",
+    ".hif",
     ".png",
     ".tif",
     ".tiff",
     ".webp",
 }
+SIPS_INPUT_EXTS = {".hif"}
 
 
 def parse_args():
@@ -121,6 +123,26 @@ def run_ffmpeg(cmd: list[str]) -> None:
         raise RuntimeError(stderr or "ffmpeg failed")
 
 
+def run_sips(source: Path, destination: Path) -> None:
+    result = subprocess.run(
+        ["sips", "-s", "format", "jpeg", str(source), "--out", str(destination)],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(stderr or "sips failed")
+
+
+def prepare_input_image(image: Path, tile_path: Path) -> Path:
+    if image.suffix.lower() not in SIPS_INPUT_EXTS:
+        return image
+
+    converted = tile_path.with_name(f"{tile_path.stem}_input.jpg")
+    run_sips(image, converted)
+    return converted
+
+
 def render_tile(
     ffmpeg: str,
     image: Path,
@@ -135,6 +157,7 @@ def render_tile(
     if image_height < 80:
         raise ValueError("--thumb-height must leave at least 80px for the image area")
 
+    input_image = prepare_input_image(image, tile_path)
     label = escape_drawtext(f"{index:03d} {shorten_label(image.name)}")
     scale = (
         f"scale=w='if(gt(a,{tile_width}/{image_height}),{tile_width},-2)':"
@@ -154,7 +177,7 @@ def render_tile(
             "error",
             "-y",
             "-i",
-            str(image),
+            str(input_image),
             "-vf",
             ",".join(filters),
             "-frames:v",

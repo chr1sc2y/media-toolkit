@@ -48,6 +48,13 @@ Ask the agent to use that prompt with a photo directory:
 Workflow preset notes live under `presets/`, including the Sony ST travel base
 starting point for Lightroom / Camera Raw XMP sidecars.
 
+During agent-led culling, portraits are separated by default into `人像/raw/`
+and `人像/hif/`, then culled and rough-edited with gentler portrait settings.
+Temporary JPEG caches such as `review_jpg/` should be deleted before the run is
+reported complete. If a review artifact is useful, prefer a single
+low-resolution `_contact_sheet.jpg` in the photo directory, with portrait and
+non-portrait sections separated.
+
 ## Command Reference
 
 `mt` is the stable human-facing command. Use clear long command names in docs,
@@ -116,7 +123,10 @@ positions back to source files.
 - Recursively scans common image formats
 - `--export-only` limits the scan to files under `Export`/`export` directories
 - `--exclude-dir` can be repeated to ignore tool output directories
-- Output defaults to `contact_sheets/`
+- Supports `.hif` previews by converting them through a temporary internal JPEG
+  cache during rendering
+- For agent-led culling, place the final combined overview image at
+  `_contact_sheet.jpg`, with portrait and non-portrait sections separated
 
 ### Media File Organization
 
