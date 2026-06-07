@@ -47,6 +47,16 @@ class GenerateContactSheetsTest(unittest.TestCase):
             ffmpeg_cmd = run_ffmpeg.call_args.args[0]
             self.assertIn(str(tile.with_name("tile_input.jpg")), ffmpeg_cmd)
 
+    def test_format_label_omits_index_by_default(self):
+        label = generate_contact_sheets.format_label(Path("DSC0001.HIF"), 7, False)
+
+        self.assertEqual(label, "DSC0001.HIF")
+
+    def test_format_label_can_include_index(self):
+        label = generate_contact_sheets.format_label(Path("DSC0001.HIF"), 7, True)
+
+        self.assertEqual(label, "007 DSC0001.HIF")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,7 +14,7 @@ instructions should prefer `mt`.
 | `mt featured` | Copy matching files from image folders into `featured/` based on stems found in `raw/`. |
 | `mt organize` | Move camera media into per-directory type folders such as `raw/` and `hif/`. |
 | `mt fill-locations` | Plan or apply missing Apple Photos location fixes. |
-| `mt contact-sheet` | Generate numbered contact sheets and a manifest. |
+| `mt contact-sheet` | Generate contact sheets and a manifest. |
 | `mt image-compress` | Compress oversized JPG/JPEG files under a maximum byte size. |
 | `mt drone` | Compress drone videos with the existing preset. |
 | `mt png-to-jpg` | Convert PNG images to JPG. |
@@ -53,7 +53,8 @@ conversion caches out of the final photo directory state. When contact sheets
 are useful, keep portrait and non-portrait overviews as separate files: the
 photo directory's `_contact_sheet.jpg` must include non-portraits only; if a
 portrait directory exists, write `人像/_contact_sheet.jpg` for portraits only,
-with each numbered portrait group shown as a separate section.
+with each numbered portrait group shown as a separate section. Final contact
+sheets should label tiles by filename only, without `001`/`002` index prefixes.
 
 ## Development Rules
 

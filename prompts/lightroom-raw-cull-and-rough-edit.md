@@ -22,6 +22,7 @@ and optional sibling preview folders such as `hif/`, `jpg/`, or `jpeg/`.
 - 人像和非人像都参与后续评星、标签和基础预设写入；人像使用更温和的 Texture/Clarity/Dehaze，避免皮肤和毛发显脏。
 - 生成预览时可以使用工具内部临时转换缓存，但流程结束前必须删除；不要把 review_jpg/ 或类似临时转换图留在照片目录。
 - 默认输出两类低分辨率总览图，物理分开保存，方便分别查看：原照片目录下的 _contact_sheet.jpg 只包含非人像；如果存在人像目录，则 人像/_contact_sheet.jpg 只包含人像，并按 Portrait 1、Portrait 2、Portrait 3 等人物分区。
+- 最终 Contact Sheet 的每个缩略图只显示文件名，不显示 001/002 之类的序号；只有明确需要和 manifest.tsv 对照时才启用序号。
 
 筛选规则：
 - 使用星级，不使用旗标。

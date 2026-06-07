@@ -32,7 +32,7 @@ SIPS_INPUT_EXTS = {".hif"}
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Create numbered contact sheets from images.",
+        description="Create contact sheets from images.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("directory", help="Directory to scan recursively")
@@ -58,6 +58,11 @@ def parse_args():
     parser.add_argument("--thumb-height", type=int, default=320, help="Thumbnail tile height")
     parser.add_argument("--label-height", type=int, default=52, help="Reserved label area height")
     parser.add_argument("--quality", type=int, default=3, help="FFmpeg JPEG quality, 1 is best")
+    parser.add_argument(
+        "--show-index",
+        action="store_true",
+        help="Prefix each tile label with its manifest index.",
+    )
     return parser.parse_args()
 
 
@@ -116,6 +121,13 @@ def shorten_label(value: str, max_len: int = 34) -> str:
     return stem[:room] + "..." + suffix
 
 
+def format_label(image: Path, index: int, show_index: bool) -> str:
+    name = shorten_label(image.name)
+    if show_index:
+        return f"{index:03d} {name}"
+    return name
+
+
 def run_ffmpeg(cmd: list[str]) -> None:
     result = subprocess.run(cmd, text=True, capture_output=True)
     if result.returncode != 0:
@@ -152,13 +164,14 @@ def render_tile(
     tile_height: int,
     label_height: int,
     quality: int,
+    show_index: bool = False,
 ) -> None:
     image_height = tile_height - label_height
     if image_height < 80:
         raise ValueError("--thumb-height must leave at least 80px for the image area")
 
     input_image = prepare_input_image(image, tile_path)
-    label = escape_drawtext(f"{index:03d} {shorten_label(image.name)}")
+    label = escape_drawtext(format_label(image, index, show_index))
     scale = (
         f"scale=w='if(gt(a,{tile_width}/{image_height}),{tile_width},-2)':"
         f"h='if(gt(a,{tile_width}/{image_height}),-2,{image_height})'"
@@ -330,6 +343,7 @@ def generate_contact_sheets(args) -> int:
                     args.thumb_height,
                     args.label_height,
                     args.quality,
+                    args.show_index,
                 )
 
             for pos in range(len(chunk) + 1, per_sheet + 1):

@@ -121,7 +121,7 @@ mt contact-sheet /path/to/photos --export-only --exclude-dir PixCake
 mt contact-sheet --export-only --exclude-dir PixCake
 ```
 
-Generates numbered contact sheet thumbnails and a `manifest.tsv` mapping sheet
+Generates contact sheet thumbnails and a `manifest.tsv` mapping sheet
 positions back to source files.
 
 - Recursively scans common image formats
@@ -129,6 +129,8 @@ positions back to source files.
 - `--exclude-dir` can be repeated to ignore tool output directories
 - Supports `.hif` previews by converting them through a temporary internal JPEG
   cache during rendering
+- Tile labels show filenames only by default; pass `--show-index` to prefix
+  labels with manifest indexes such as `001`
 - For agent-led culling, place the final combined overview image at
   `_contact_sheet.jpg` for non-portraits only; portrait overviews belong at
   `人像/_contact_sheet.jpg`
