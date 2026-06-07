@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import runpy
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -116,10 +118,82 @@ def has_positional_argument(args: list[str], options_with_values: tuple[str, ...
     return False
 
 
-def build_script_argv(command: Command, args: list[str]) -> list[str]:
+def is_interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def normalize_directory_input(raw_input: str) -> Path:
+    return Path(raw_input.strip()).expanduser().resolve()
+
+
+def prompt_for_directory(
+    *,
+    input_func: Callable[[str], str] = input,
+    output: TextIO = sys.stdout,
+) -> Path | None:
+    while True:
+        raw_input = input_func("Enter directory: ").strip()
+        if not raw_input:
+            print("Directory is required.", file=output)
+            continue
+        try:
+            directory = normalize_directory_input(raw_input)
+        except OSError:
+            print(f"Invalid path: {raw_input}", file=output)
+            continue
+        if not directory.exists():
+            print(f"Directory does not exist: {directory}", file=output)
+            continue
+        if not directory.is_dir():
+            print(f"Not a directory: {directory}", file=output)
+            continue
+        return directory
+
+
+def resolve_default_directory(
+    *,
+    input_func: Callable[[str], str] = input,
+    cwd_func: Callable[[], Path] = Path.cwd,
+    output: TextIO = sys.stdout,
+) -> Path | None:
+    cwd = cwd_func().resolve()
+    response = input_func(
+        f"Run on current directory ({cwd})? Type y to confirm: "
+    )
+    if response.strip() == "y":
+        return cwd
+    return prompt_for_directory(input_func=input_func, output=output)
+
+
+def build_script_argv(
+    command: Command,
+    args: list[str],
+    *,
+    input_func: Callable[[str], str] = input,
+    cwd_func: Callable[[], Path] = Path.cwd,
+    output: TextIO = sys.stdout,
+    interactive: bool | None = None,
+) -> list[str] | None:
     script_args = list(args)
-    if command.default_cwd and not has_positional_argument(script_args, command.options_with_values):
-        script_args.insert(0, str(Path.cwd()))
+    if command.default_cwd and not has_positional_argument(
+        script_args, command.options_with_values
+    ):
+        if interactive if interactive is not None else is_interactive():
+            directory = resolve_default_directory(
+                input_func=input_func,
+                cwd_func=cwd_func,
+                output=output,
+            )
+            if directory is None:
+                return None
+            script_args.insert(0, str(directory))
+        else:
+            print(
+                "mt: directory required when stdin is not interactive "
+                "(pass a path argument).",
+                file=sys.stderr,
+            )
+            return None
     return [command.script_name, *script_args]
 
 
@@ -158,7 +232,10 @@ def run_script(command: Command, args: list[str]) -> int:
     old_argv = sys.argv[:]
     old_path = sys.path[:]
     try:
-        sys.argv = build_script_argv(command, args)
+        script_argv = build_script_argv(command, args)
+        if script_argv is None:
+            return 1
+        sys.argv = script_argv
         if str(REPO_ROOT) not in sys.path:
             sys.path.insert(0, str(REPO_ROOT))
         runpy.run_path(str(script_path), run_name="__main__")

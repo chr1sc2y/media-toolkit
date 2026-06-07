@@ -25,6 +25,7 @@ FILE_TYPES = {
     "hif": frozenset({".hif", ".heif", ".heic"}),
     "raw": frozenset({
         ".3fr",
+        ".acr",
         ".arw",
         ".cr2",
         ".cr3",
@@ -41,6 +42,7 @@ FILE_TYPES = {
         ".rwl",
         ".srw",
         ".x3f",
+        ".xmp",
     }),
 }
 OUTPUT_DIRS = frozenset(FILE_TYPES)

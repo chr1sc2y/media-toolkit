@@ -53,6 +53,21 @@ class OrganizeSonyMediaTest(unittest.TestCase):
             self.assertFalse((existing_hif / "hif").exists())
             self.assertFalse((existing_raw / "raw").exists())
 
+    def test_moves_sidecar_files_into_raw_bucket(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "DSC0001.ARW").write_text("raw", encoding="utf-8")
+            (root / "DSC0001.xmp").write_text("xmp", encoding="utf-8")
+            (root / "DSC0001.acr").write_text("acr", encoding="utf-8")
+
+            summary = organize_directory(root, verbose=False)
+
+            self.assertEqual(summary.moved, 3)
+            self.assertEqual(summary.moved_by_type["raw"], 3)
+            self.assertTrue((root / "raw" / "DSC0001.ARW").exists())
+            self.assertTrue((root / "raw" / "DSC0001.xmp").exists())
+            self.assertTrue((root / "raw" / "DSC0001.acr").exists())
+
     def test_supports_other_camera_raw_extensions(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
