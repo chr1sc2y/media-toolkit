@@ -43,14 +43,16 @@ The user should only need to provide the target photo directory. Apply the
 prompt to that external directory, write Lightroom/Camera Raw sidecars next to
 the RAW files, and leave large media files outside this repository.
 
-For photo culling runs, separate portraits by default. Move portrait RAW files
-and their matching HIF/JPG previews under `人像/`, keeping the same `raw/` and
-`hif/` split inside that directory. Cull and rough-edit both portrait and
-non-portrait RAW files by writing sidecar XMP; use gentler portrait settings for
-Texture, Clarity, and Dehaze. Keep temporary JPEG conversion caches out of the
-final photo directory state. When contact sheets are useful, leave a single
-low-resolution overview image named `_contact_sheet.jpg` in the photo directory,
-with portrait and non-portrait sections separated.
+For photo culling runs, separate portraits by default. Use visual judgment to
+group portraits by person in first-appearance order: `人像/1/`, `人像/2/`,
+`人像/3/`, etc. Inside each person directory, keep the same media split such as
+`raw/` for RAW plus XMP sidecars and `hif/` for matching previews. Cull and
+rough-edit both portrait and non-portrait RAW files by writing sidecar XMP; use
+gentler portrait settings for Texture, Clarity, and Dehaze. Keep temporary JPEG
+conversion caches out of the final photo directory state. When contact sheets
+are useful, leave a single low-resolution overview image named
+`_contact_sheet.jpg` in the photo directory, with `Other` and each numbered
+portrait group shown as separate sections.
 
 ## Development Rules
 

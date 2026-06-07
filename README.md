@@ -48,12 +48,15 @@ Ask the agent to use that prompt with a photo directory:
 Workflow preset notes live under `presets/`, including the Sony ST travel base
 starting point for Lightroom / Camera Raw XMP sidecars.
 
-During agent-led culling, portraits are separated by default into `人像/raw/`
-and `人像/hif/`, then culled and rough-edited with gentler portrait settings.
-Temporary JPEG caches such as `review_jpg/` should be deleted before the run is
-reported complete. If a review artifact is useful, prefer a single
-low-resolution `_contact_sheet.jpg` in the photo directory, with portrait and
-non-portrait sections separated.
+During agent-led culling, portraits are separated by default. If one person is
+present, use `人像/1/raw/` and `人像/1/hif/`. If multiple people are present, use
+visual judgment to group them by person in first-appearance order:
+`人像/1/`, `人像/2/`, `人像/3/`, etc. Each person directory keeps its own `raw/`
+and `hif/` split, then gets culled and rough-edited with gentler portrait
+settings. Temporary JPEG caches such as `review_jpg/` should be deleted before
+the run is reported complete. If a review artifact is useful, prefer a single
+low-resolution `_contact_sheet.jpg` in the photo directory, with `Other` and
+each numbered portrait group shown as separate sections.
 
 ## Command Reference
 
@@ -126,7 +129,7 @@ positions back to source files.
 - Supports `.hif` previews by converting them through a temporary internal JPEG
   cache during rendering
 - For agent-led culling, place the final combined overview image at
-  `_contact_sheet.jpg`, with portrait and non-portrait sections separated
+  `_contact_sheet.jpg`, with `Other` and each numbered portrait group separated
 
 ### Media File Organization
 
