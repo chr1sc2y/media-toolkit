@@ -50,9 +50,10 @@ group portraits by person in first-appearance order: `人像/1/`, `人像/2/`,
 rough-edit both portrait and non-portrait RAW files by writing sidecar XMP; use
 gentler portrait settings for Texture, Clarity, and Dehaze. Keep temporary JPEG
 conversion caches out of the final photo directory state. When contact sheets
-are useful, leave a single low-resolution overview image named
-`_contact_sheet.jpg` in the photo directory, with `Other` and each numbered
-portrait group shown as separate sections.
+are useful, keep portrait and non-portrait overviews as separate files: the
+photo directory's `_contact_sheet.jpg` must include non-portraits only; if a
+portrait directory exists, write `人像/_contact_sheet.jpg` for portraits only,
+with each numbered portrait group shown as a separate section.
 
 ## Development Rules
 

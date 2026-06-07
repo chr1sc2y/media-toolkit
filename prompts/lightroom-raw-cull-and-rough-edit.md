@@ -21,7 +21,7 @@ and optional sibling preview folders such as `hif/`, `jpg/`, or `jpeg/`.
 - 如果人像里出现多个人，调用视觉判断能力按人物区分，并按首次出现顺序分到 人像/1/、人像/2/、人像/3/ 等目录；每个人物目录内继续保留 raw/ 与 hif/ 或 jpg/ 分隔。
 - 人像和非人像都参与后续评星、标签和基础预设写入；人像使用更温和的 Texture/Clarity/Dehaze，避免皮肤和毛发显脏。
 - 生成预览时可以使用工具内部临时转换缓存，但流程结束前必须删除；不要把 review_jpg/ 或类似临时转换图留在照片目录。
-- 默认在原照片目录下输出一张低分辨率总览图 _contact_sheet.jpg。总览图需要把 Other 和 Portrait 1、Portrait 2、Portrait 3 等人物分区分开，方便分别查看。
+- 默认输出两类低分辨率总览图，物理分开保存，方便分别查看：原照片目录下的 _contact_sheet.jpg 只包含非人像；如果存在人像目录，则 人像/_contact_sheet.jpg 只包含人像，并按 Portrait 1、Portrait 2、Portrait 3 等人物分区。
 
 筛选规则：
 - 使用星级，不使用旗标。
@@ -79,7 +79,7 @@ XMP 写入建议：
 - 说明哪些 Lightroom 字段已经写入，哪些字段可能需要 Lightroom 读入后重新计算或确认。
 - 说明是否存在人像目录，以及每个人像编号目录的 RAW/HIF 数量。
 - 确认临时 review_jpg/ 已删除。
-- 如果生成了接触表，说明 _contact_sheet.jpg 的位置。
+- 如果生成了接触表，说明原目录 _contact_sheet.jpg 和 人像/_contact_sheet.jpg 的位置；没有人像目录时只说明原目录 _contact_sheet.jpg。
 ```
 
 ## Usage

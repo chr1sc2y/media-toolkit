@@ -55,8 +55,9 @@ visual judgment to group them by person in first-appearance order:
 and `hif/` split, then gets culled and rough-edited with gentler portrait
 settings. Temporary JPEG caches such as `review_jpg/` should be deleted before
 the run is reported complete. If a review artifact is useful, prefer a single
-low-resolution `_contact_sheet.jpg` in the photo directory, with `Other` and
-each numbered portrait group shown as separate sections.
+low-resolution `_contact_sheet.jpg` in the photo directory for non-portraits
+only. If portraits exist, also write `人像/_contact_sheet.jpg` for portraits
+only, with each numbered portrait group shown as a separate section.
 
 ## Command Reference
 
@@ -129,7 +130,8 @@ positions back to source files.
 - Supports `.hif` previews by converting them through a temporary internal JPEG
   cache during rendering
 - For agent-led culling, place the final combined overview image at
-  `_contact_sheet.jpg`, with `Other` and each numbered portrait group separated
+  `_contact_sheet.jpg` for non-portraits only; portrait overviews belong at
+  `人像/_contact_sheet.jpg`
 
 ### Media File Organization
 
