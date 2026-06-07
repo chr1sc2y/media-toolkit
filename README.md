@@ -26,6 +26,28 @@ mt image-compress /path/to/photos --max-bytes 1048576
 When a directory-based command is run without a path, `mt` uses the current
 directory.
 
+## Agent Workflows
+
+Reusable agent prompts live under `prompts/`. Keep photo folders in their
+original travel/import locations; do not copy large photo directories into this
+repository.
+
+For Lightroom RAW culling and rough edits:
+
+```bash
+prompts/lightroom-raw-cull-and-rough-edit.md
+```
+
+Ask the agent to use that prompt with a photo directory:
+
+```text
+使用 prompts/lightroom-raw-cull-and-rough-edit.md
+对 /path/to/photo-directory 执行 RAW 初筛和 Lightroom 粗修流程。
+```
+
+Workflow preset notes live under `presets/`, including the Sony ST travel base
+starting point for Lightroom / Camera Raw XMP sidecars.
+
 ## Command Reference
 
 `mt` is the stable human-facing command. Use clear long command names in docs,

@@ -27,6 +27,22 @@ Short aliases such as `mt f`, `mt o`, and `mt loc` exist only as compatibility
 shortcuts. Do not use them in documentation or generated instructions unless the
 user explicitly asks for aliases.
 
+## Reusable Agent Workflows
+
+Reusable prompts live under `prompts/`; workflow preset notes live under
+`presets/`. Keep photos in their original travel/import directories instead of
+copying them into this repository.
+
+For Lightroom RAW culling and rough edits, use:
+
+```text
+prompts/lightroom-raw-cull-and-rough-edit.md
+```
+
+The user should only need to provide the target photo directory. Apply the
+prompt to that external directory, write Lightroom/Camera Raw sidecars next to
+the RAW files, and leave large media files outside this repository.
+
 ## Development Rules
 
 - Keep `media_toolkit/cli.py` as the command launcher.
