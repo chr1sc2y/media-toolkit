@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Generate contact sheet thumbnails for fast photo review.
 
@@ -10,11 +11,14 @@ Examples:
 
 import argparse
 import math
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 IMAGE_EXTS = {
     ".avif",
@@ -27,7 +31,11 @@ IMAGE_EXTS = {
     ".tiff",
     ".webp",
 }
-SIPS_INPUT_EXTS = {".hif"}
+TRANSCODE_INPUT_EXTS = {".hif"}
+FFMPEG_FULL_PATHS = (
+    Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"),
+    Path("/usr/local/opt/ffmpeg-full/bin/ffmpeg"),
+)
 
 
 def parse_args():
@@ -47,6 +55,11 @@ def parse_args():
         help='Only include images below directories named "export" (case-insensitive)',
     )
     parser.add_argument(
+        "--hif-only",
+        action="store_true",
+        help='Only include HIF files below directories named "hif" (case-insensitive).',
+    )
+    parser.add_argument(
         "--exclude-dir",
         action="append",
         default=[],
@@ -63,15 +76,56 @@ def parse_args():
         action="store_true",
         help="Prefix each tile label with its manifest index.",
     )
+    parser.add_argument(
+        "--final-overview",
+        help="Also combine generated sheet pages into this final JPG path.",
+    )
+    parser.add_argument(
+        "--section-by-numbered-dir",
+        action="store_true",
+        help="Keep numbered child directories in separate final-overview sections.",
+    )
+    parser.add_argument(
+        "--section-prefix",
+        help='Section title prefix for numbered dirs, such as "Portrait" or "Panorama".',
+    )
     return parser.parse_args()
 
 
+class SheetPage:
+    def __init__(self, images: list[Path], title: str | None = None):
+        self.images = images
+        self.title = title
+
+
 def require_ffmpeg():
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
+    candidates = [
+        *(str(path) for path in FFMPEG_FULL_PATHS if path.exists() and os.access(path, os.X_OK)),
+        *(candidate for candidate in [shutil.which("ffmpeg")] if candidate),
+    ]
+    for ffmpeg in candidates:
+        if ffmpeg_has_filter(ffmpeg, "drawtext"):
+            return ffmpeg
+    if candidates:
+        print(
+            "Error: ffmpeg was found, but it does not support the drawtext filter. "
+            "Install ffmpeg-full or another ffmpeg build with libfreetype.",
+            file=sys.stderr,
+        )
+    else:
         print("Error: ffmpeg is required but was not found in PATH.", file=sys.stderr)
-        sys.exit(1)
-    return ffmpeg
+    sys.exit(1)
+
+
+def ffmpeg_has_filter(ffmpeg: str, filter_name: str) -> bool:
+    result = subprocess.run(
+        [ffmpeg, "-hide_banner", "-filters"],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return False
+    return any(line.split()[1:2] == [filter_name] for line in result.stdout.splitlines())
 
 
 def is_under_export(path: Path) -> bool:
@@ -82,12 +136,30 @@ def is_excluded(path: Path, excluded_names: set[str]) -> bool:
     return any(part.lower() in excluded_names for part in path.parts)
 
 
-def collect_images(root: Path, export_only: bool, exclude_dirs: list[str]) -> list[Path]:
+def is_under_hif(path: Path) -> bool:
+    return any(part.lower() == "hif" for part in path.parts)
+
+
+def collect_images(
+    root: Path,
+    export_only: bool,
+    exclude_dirs: list[str],
+    hif_only: bool = False,
+) -> list[Path]:
     excluded_names = {name.lower() for name in exclude_dirs}
     images = []
 
     for path in root.rglob("*"):
         if not path.is_file():
+            continue
+        if hif_only:
+            if path.suffix.lower() != ".hif":
+                continue
+            if not is_under_hif(path):
+                continue
+            if excluded_names and is_excluded(path, excluded_names):
+                continue
+            images.append(path)
             continue
         if path.suffix.lower() not in IMAGE_EXTS:
             continue
@@ -128,6 +200,97 @@ def format_label(image: Path, index: int, show_index: bool) -> str:
     return name
 
 
+def chunk_images(images: list[Path], per_sheet: int) -> list[list[Path]]:
+    return [images[index : index + per_sheet] for index in range(0, len(images), per_sheet)]
+
+
+def numbered_section_key(root: Path, image: Path) -> str | None:
+    try:
+        parts = image.relative_to(root).parts
+    except ValueError:
+        parts = image.parts
+    for part in parts[:-1]:
+        if part.isdigit():
+            return part
+    return None
+
+
+def build_sheet_plan(
+    images: list[Path],
+    root: Path,
+    per_sheet: int,
+    section_by_numbered_dir: bool,
+    section_prefix: str | None,
+) -> list[SheetPage]:
+    if per_sheet < 1:
+        raise ValueError("per_sheet must be positive")
+    if not section_by_numbered_dir:
+        return [SheetPage(chunk) for chunk in chunk_images(images, per_sheet)]
+
+    sections: list[tuple[str | None, list[Path]]] = []
+    section_index: dict[str | None, int] = {}
+    for image in images:
+        key = numbered_section_key(root, image)
+        if key not in section_index:
+            section_index[key] = len(sections)
+            sections.append((key, []))
+        sections[section_index[key]][1].append(image)
+
+    pages: list[SheetPage] = []
+    for key, section_images in sections:
+        title = None
+        if key is not None:
+            title = f"{section_prefix or 'Section'} {key}"
+        for index, chunk in enumerate(chunk_images(section_images, per_sheet)):
+            pages.append(SheetPage(chunk, title if index == 0 else None))
+    return pages
+
+
+def load_font(size: int) -> ImageFont.ImageFont:
+    for path in (
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Helvetica.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ):
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def combine_contact_sheets(
+    sheets: list[tuple[Path, str | None]],
+    output_path: Path,
+    quality: int = 92,
+) -> None:
+    if not sheets:
+        raise ValueError("sheets must not be empty")
+
+    images = [Image.open(path).convert("RGB") for path, _title in sheets]
+    try:
+        header_height = 82
+        width = max(image.width for image in images)
+        height = sum(image.height for image in images)
+        height += sum(header_height for _path, title in sheets if title)
+        canvas = Image.new("RGB", (width, height), "white")
+        draw = ImageDraw.Draw(canvas)
+        font = load_font(42)
+        y = 0
+        for image, (_path, title) in zip(images, sheets):
+            if title:
+                draw.rectangle((0, y, width, y + header_height), fill=(245, 245, 245))
+                draw.text((24, y + 20), title, fill=(20, 20, 20), font=font)
+                y += header_height
+            canvas.paste(image, (0, y))
+            y += image.height
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        canvas.save(output_path, quality=quality)
+    finally:
+        for image in images:
+            image.close()
+
+
 def run_ffmpeg(cmd: list[str]) -> None:
     result = subprocess.run(cmd, text=True, capture_output=True)
     if result.returncode != 0:
@@ -146,12 +309,34 @@ def run_sips(source: Path, destination: Path) -> None:
         raise RuntimeError(stderr or "sips failed")
 
 
-def prepare_input_image(image: Path, tile_path: Path) -> Path:
-    if image.suffix.lower() not in SIPS_INPUT_EXTS:
+def render_ffmpeg_input_image(ffmpeg: str, source: Path, destination: Path) -> None:
+    run_ffmpeg(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(source),
+            "-frames:v",
+            "1",
+            "-q:v",
+            "3",
+            str(destination),
+        ]
+    )
+
+
+def prepare_input_image(ffmpeg: str, image: Path, tile_path: Path) -> Path:
+    if image.suffix.lower() not in TRANSCODE_INPUT_EXTS:
         return image
 
     converted = tile_path.with_name(f"{tile_path.stem}_input.jpg")
-    run_sips(image, converted)
+    try:
+        render_ffmpeg_input_image(ffmpeg, image, converted)
+    except RuntimeError:
+        run_sips(image, converted)
     return converted
 
 
@@ -170,7 +355,6 @@ def render_tile(
     if image_height < 80:
         raise ValueError("--thumb-height must leave at least 80px for the image area")
 
-    input_image = prepare_input_image(image, tile_path)
     label = escape_drawtext(format_label(image, index, show_index))
     scale = (
         f"scale=w='if(gt(a,{tile_width}/{image_height}),{tile_width},-2)':"
@@ -182,24 +366,37 @@ def render_tile(
         f"drawbox=x=0:y={image_height}:w={tile_width}:h={label_height}:color=black@0.85:t=fill",
         f"drawtext=text='{label}':fontcolor=white:fontsize=18:x=12:y={image_height + 10}",
     ]
-    run_ffmpeg(
-        [
-            ffmpeg,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(input_image),
-            "-vf",
-            ",".join(filters),
-            "-frames:v",
-            "1",
-            "-q:v",
-            str(quality),
-            str(tile_path),
-        ]
-    )
+
+    def render_with(input_image: Path) -> None:
+        run_ffmpeg(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(input_image),
+                "-vf",
+                ",".join(filters),
+                "-frames:v",
+                "1",
+                "-q:v",
+                str(quality),
+                str(tile_path),
+            ]
+        )
+
+    try:
+        input_image = prepare_input_image(ffmpeg, image, tile_path)
+        render_with(input_image)
+    except RuntimeError:
+        if image.suffix.lower() not in TRANSCODE_INPUT_EXTS:
+            raise
+        converted = tile_path.with_name(f"{tile_path.stem}_input.jpg")
+        if not converted.exists():
+            run_sips(image, converted)
+        render_with(converted)
 
 
 def render_blank(
@@ -234,29 +431,58 @@ def render_sheet(
     temp_dir: Path,
     sheet_path: Path,
     cols: int,
-    rows: int,
+    tile_count: int,
     tile_width: int,
     tile_height: int,
     quality: int,
 ) -> None:
+    if tile_count < 1:
+        raise ValueError("tile_count must be positive")
+
     inputs = []
     labels = []
     layout = []
     padding = 8
     margin = 12
+    rows = math.ceil(tile_count / cols)
 
-    for index in range(1, cols * rows + 1):
+    for index in range(1, tile_count + 1):
         inputs.extend(["-i", str(temp_dir / f"tile_{index:04d}.jpg")])
         labels.append(f"[{index - 1}:v]")
         col = (index - 1) % cols
         row = (index - 1) // cols
         layout.append(f"{col * (tile_width + padding)}_{row * (tile_height + padding)}")
 
-    width = cols * tile_width + (cols - 1) * padding + 2 * margin
+    used_cols = min(cols, tile_count)
+    width = used_cols * tile_width + (used_cols - 1) * padding + 2 * margin
     height = rows * tile_height + (rows - 1) * padding + 2 * margin
+
+    if tile_count == 1:
+        run_ffmpeg(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(temp_dir / "tile_0001.jpg"),
+                "-filter_complex",
+                f"[0:v]pad={width}:{height}:{margin}:{margin}:white,setsar=1,crop={width}:{height}:0:0[out]",
+                "-map",
+                "[out]",
+                "-frames:v",
+                "1",
+                "-q:v",
+                str(quality),
+                str(sheet_path),
+            ]
+        )
+        return
+
     filter_complex = (
         f"{''.join(labels)}"
-        f"xstack=inputs={cols * rows}:layout={'|'.join(layout)}:fill=white,"
+        f"xstack=inputs={tile_count}:layout={'|'.join(layout)}:fill=white,"
         f"pad={width}:{height}:{margin}:{margin}:white,"
         f"setsar=1,crop={width}:{height}:0:0[out]"
     )
@@ -311,8 +537,14 @@ def generate_contact_sheets(args) -> int:
     if args.label_height >= args.thumb_height:
         print("Error: --label-height must be smaller than --thumb-height.", file=sys.stderr)
         return 1
+    if args.section_by_numbered_dir and not args.final_overview:
+        print(
+            "Error: --section-by-numbered-dir requires --final-overview.",
+            file=sys.stderr,
+        )
+        return 1
 
-    images = collect_images(root, args.export_only, args.exclude_dir)
+    images = collect_images(root, args.export_only, args.exclude_dir, args.hif_only)
     if not images:
         print("No images found.")
         return 0
@@ -321,19 +553,28 @@ def generate_contact_sheets(args) -> int:
     write_manifest(output_dir, root, images, args.cols, args.rows)
 
     per_sheet = args.cols * args.rows
-    total_sheets = math.ceil(len(images) / per_sheet)
+    sheet_plan = build_sheet_plan(
+        images,
+        root,
+        per_sheet,
+        args.section_by_numbered_dir,
+        args.section_prefix,
+    )
+    total_sheets = len(sheet_plan)
     print(f"Found {len(images)} images.")
     print(f"Writing {total_sheets} contact sheet(s) to: {output_dir}")
 
-    for sheet_index in range(total_sheets):
-        chunk = images[sheet_index * per_sheet : (sheet_index + 1) * per_sheet]
+    rendered_sheets: list[tuple[Path, str | None]] = []
+    global_index = 0
+    for sheet_index, page in enumerate(sheet_plan):
+        chunk = page.images
         sheet_path = output_dir / f"contact_sheet_{sheet_index + 1:03d}.jpg"
 
         with tempfile.TemporaryDirectory(prefix="contact-sheet-") as temp:
             temp_dir = Path(temp)
             for pos, image in enumerate(chunk, start=1):
                 tile_path = temp_dir / f"tile_{pos:04d}.jpg"
-                global_index = sheet_index * per_sheet + pos
+                global_index += 1
                 render_tile(
                     ffmpeg,
                     image,
@@ -346,21 +587,23 @@ def generate_contact_sheets(args) -> int:
                     args.show_index,
                 )
 
-            for pos in range(len(chunk) + 1, per_sheet + 1):
-                tile_path = temp_dir / f"tile_{pos:04d}.jpg"
-                render_blank(ffmpeg, tile_path, args.thumb_width, args.thumb_height, args.quality)
-
             render_sheet(
                 ffmpeg,
                 temp_dir,
                 sheet_path,
                 args.cols,
-                args.rows,
+                len(chunk),
                 args.thumb_width,
                 args.thumb_height,
                 args.quality,
             )
             print(f"  {sheet_path.name}: {len(chunk)} image(s)")
+            rendered_sheets.append((sheet_path, page.title))
+
+    if args.final_overview:
+        final_overview = Path(args.final_overview).expanduser().resolve()
+        combine_contact_sheets(rendered_sheets, final_overview)
+        print(f"Final overview: {final_overview}")
 
     print(f"Manifest: {output_dir / 'manifest.tsv'}")
     return 0

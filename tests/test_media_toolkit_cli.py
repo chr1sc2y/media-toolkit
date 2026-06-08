@@ -28,6 +28,9 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("organize").script_name, "organize.py")
         self.assertEqual(resolve_command("fill-locations").script_name, "fill_missing_photo_locations.py")
         self.assertEqual(resolve_command("contact-sheet").script_name, "generate_contact_sheets.py")
+        self.assertEqual(resolve_command("portrait-organize").script_name, "portrait_organize.py")
+        self.assertEqual(resolve_command("panorama-organize").script_name, "panorama_organize.py")
+        self.assertEqual(resolve_command("verify-cull").script_name, "verify_cull.py")
         self.assertEqual(resolve_command("image-compress").script_name, "compress_images_under_size.py")
         self.assertEqual(resolve_command("png-to-jpg").script_name, "png_to_jpg.py")
 
@@ -75,6 +78,12 @@ class MediaToolkitCliTest(unittest.TestCase):
 
         self.assertIsNone(argv)
 
+    def test_help_option_does_not_require_directory(self):
+        command = resolve_command("verify-cull")
+        argv = build_script_argv(command, ["--help"], interactive=False)
+
+        self.assertEqual(argv, ["verify_cull.py", "--help"])
+
     def test_explicit_directory_skips_confirmation_prompt(self):
         command = resolve_command("drone")
         argv = build_script_argv(
@@ -87,6 +96,82 @@ class MediaToolkitCliTest(unittest.TestCase):
         )
 
         self.assertEqual(argv, ["compress_drone_video.py", "/tmp/videos"])
+
+    def test_contact_sheet_value_options_do_not_count_as_directory(self):
+        command = resolve_command("contact-sheet")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                [
+                    "--hif-only",
+                    "--final-overview",
+                    "/tmp/_contact_sheet.jpg",
+                    "--section-prefix",
+                    "Portrait",
+                ],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
+    def test_portrait_organize_manifest_option_does_not_count_as_directory(self):
+        command = resolve_command("portrait-organize")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--manifest", "/tmp/portraits.tsv"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
+    def test_portrait_organize_with_directory_passes_manifest_option(self):
+        command = resolve_command("portrait-organize")
+        argv = build_script_argv(
+            command,
+            ["/tmp/photos", "--manifest", "/tmp/portraits.tsv"],
+            interactive=False,
+        )
+
+        self.assertEqual(
+            argv,
+            ["portrait_organize.py", "/tmp/photos", "--manifest", "/tmp/portraits.tsv"],
+        )
+
+    def test_portrait_organize_with_directory_can_use_default_manifest(self):
+        command = resolve_command("portrait-organize")
+        argv = build_script_argv(command, ["/tmp/photos"], interactive=False)
+
+        self.assertEqual(argv, ["portrait_organize.py", "/tmp/photos"])
+
+    def test_panorama_organize_with_directory_passes_manifest_option(self):
+        command = resolve_command("panorama-organize")
+        argv = build_script_argv(
+            command,
+            ["/tmp/photos", "--manifest", "/tmp/panorama.tsv"],
+            interactive=False,
+        )
+
+        self.assertEqual(
+            argv,
+            ["panorama_organize.py", "/tmp/photos", "--manifest", "/tmp/panorama.tsv"],
+        )
+
+    def test_panorama_organize_with_directory_can_use_default_manifest(self):
+        command = resolve_command("panorama-organize")
+        argv = build_script_argv(command, ["/tmp/photos"], interactive=False)
+
+        self.assertEqual(argv, ["panorama_organize.py", "/tmp/photos"])
+
+    def test_verify_cull_with_directory_passes_path(self):
+        command = resolve_command("verify-cull")
+        argv = build_script_argv(command, ["/tmp/photos"], interactive=False)
+
+        self.assertEqual(argv, ["verify_cull.py", "/tmp/photos"])
 
     def test_resolve_default_directory_accepts_only_lowercase_y(self):
         with TemporaryDirectory() as tmp:
@@ -135,6 +220,9 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIn("mt featured", table)
         self.assertIn("mt organize", table)
         self.assertIn("mt fill-locations", table)
+        self.assertIn("mt portrait-organize", table)
+        self.assertIn("mt panorama-organize", table)
+        self.assertIn("mt verify-cull", table)
         self.assertIsNone(re.search(r"^\s*mt f\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt o\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt loc\s", table, re.MULTILINE))

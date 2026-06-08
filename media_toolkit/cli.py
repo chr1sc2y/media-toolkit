@@ -60,7 +60,32 @@ COMMANDS = (
             "--thumb-height",
             "--label-height",
             "--quality",
+            "--final-overview",
+            "--section-prefix",
         ),
+    ),
+    Command(
+        canonical="portrait-organize",
+        aliases=("portraits",),
+        script_name="portrait_organize.py",
+        help="Move portrait RAW/HIF pairs from a manifest and rebuild sheets.",
+        default_cwd=True,
+        options_with_values=("--manifest",),
+    ),
+    Command(
+        canonical="panorama-organize",
+        aliases=("panoramas",),
+        script_name="panorama_organize.py",
+        help="Move panorama RAW/HIF pairs from a manifest and rebuild sheets.",
+        default_cwd=True,
+        options_with_values=("--manifest",),
+    ),
+    Command(
+        canonical="verify-cull",
+        aliases=("verify",),
+        script_name="verify_cull.py",
+        help="Verify cull structure, pair counts, sheets, and temp artifacts.",
+        default_cwd=True,
     ),
     Command(
         canonical="image-compress",
@@ -175,7 +200,8 @@ def build_script_argv(
     interactive: bool | None = None,
 ) -> list[str] | None:
     script_args = list(args)
-    if command.default_cwd and not has_positional_argument(
+    help_requested = any(arg in ("-h", "--help") for arg in script_args)
+    if command.default_cwd and not help_requested and not has_positional_argument(
         script_args, command.options_with_values
     ):
         if interactive if interactive is not None else is_interactive():

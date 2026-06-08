@@ -49,15 +49,81 @@ Workflow preset notes live under `presets/`, including the Sony ST travel base
 starting point for Lightroom / Camera Raw XMP sidecars.
 
 During agent-led culling, portraits are separated by default. If one person is
-present, use `人像/1/raw/` and `人像/1/hif/`. If multiple people are present, use
-visual judgment to group them by person in first-appearance order:
-`人像/1/`, `人像/2/`, `人像/3/`, etc. Each person directory keeps its own `raw/`
-and `hif/` split, then gets culled and rough-edited with gentler portrait
-settings. Temporary JPEG caches such as `review_jpg/` should be deleted before
-the run is reported complete. If a review artifact is useful, prefer a single
-low-resolution `_contact_sheet.jpg` in the photo directory for non-portraits
-only. If portraits exist, also write `人像/_contact_sheet.jpg` for portraits
-only, with each numbered portrait group shown as a separate section.
+present, use `portrait/1/raw/` and `portrait/1/hif/`. If multiple people are
+present, use visual judgment to group them by person in first-appearance order:
+`portrait/1/`, `portrait/2/`, `portrait/3/`, etc. Each person directory keeps
+its own `raw/` and `hif/` split, then gets culled and rough-edited with gentler
+portrait settings.
+
+Panorama stitch sequences are separated by default. Detect them from
+consecutive frames with overlapping scenery, similar exposure settings, and
+intentional panning. Use `panorama/1/raw/` and `panorama/1/hif/` for the first
+sequence, `panorama/2/` for the second, and continue by first-appearance order.
+Keep all source frames for a panorama sequence together so Lightroom or other
+stitch tools can merge them later. Sidecars are always lowercase `.xmp` and
+include Lightroom-readable
+markers such as `crs:HasSettings=True`, `crs:AlreadyApplied=False`,
+`photoshop:SidecarForExtension=ARW`, `dc:format=image/x-sony-arw`, and
+`xmpMM:PreservedFileName`. Rough edits are customized from ISO, shutter,
+aperture, lens, RAW histogram evidence, and visual review; do not blindly apply
+one fixed preset. Automatic Upright/Level is off by default; use small manual
+`PerspectiveRotate` corrections only when a reviewed preview needs it. Sony
+portraits prefer `Camera PT` when available, while non-portraits
+prefer `Camera ST` or a natural Standard/ST fallback. Temporary JPEG caches such
+as `review_jpg/` should be deleted before the run is reported complete. Use HIF
+previews as the visual source for culling decisions, composition/focus review,
+and contact sheets, but not as the source of truth for RAW exposure or color
+grading because they already include Sony camera rendering. Prefer
+`rawpy`/LibRaw linear RAW statistics for final-candidate exposure histograms,
+using HIF only as a visual aid. Do not use Lightroom `raw/Export/*.jpg` exports
+for portrait detection, panorama detection, culling review, or final contact
+sheets; when a portrait RAW moves, move the matching export JPG as an associated
+file only. If a review artifact
+is useful, use `mt contact-sheet --hif-only` and prefer a single low-resolution
+`_contact_sheet.jpg` in the photo directory for non-portraits only, sourced
+from `hif/` and excluding `portrait/` and `panorama/`. If portraits exist, also
+write `portrait/_contact_sheet.jpg` from `portrait/*/hif/` only, with each
+numbered portrait group shown as a separate section. If panorama groups exist,
+write `panorama/_contact_sheet.jpg` from `panorama/*/hif/` only. Final contact
+sheets should not pad the last page with black or blank placeholder tiles.
+
+Final refinement candidates are photos rated `>=3` stars. Base XMP settings
+are still written for every RAW, but 3/4/5-star files are the default pool for
+manual final editing, export, and featured selection.
+
+Editing consistency is mandatory for each batch. Final-candidate images from
+the same scene/weather should share the same core edit skeleton: camera profile,
+white balance baseline, highlight/shadow strategy, tone curve, Camera
+Calibration range, HSL/Mixer caps, vignette policy, sharpening policy, lens
+correction, and Upright policy. Per-image deviations are allowed only when the
+subject or light genuinely differs, and should be reported explicitly.
+
+Consistency means a unified final look, not identical slider values. Detect
+exposure drift caused by different camera settings, metering, or subject
+brightness by comparing RAW histogram/tonal evidence, preferably from
+`rawpy`/LibRaw for Sony `.ARW` files, plus visual review. Adjust
+`Exposure2012`, `Highlights2012`, `Shadows2012`, `Whites2012`, and `Blacks2012`
+per image as needed so the batch lands at a shared brightness and contrast
+baseline. Do not write one fixed exposure value across a batch unless the
+images genuinely match.
+
+Before assigning final-candidate ratings, group repeated compositions, burst
+sequences, and same-location frames with only minor panning or zoom changes.
+Usually keep one 4/5-star primary image per group, with at most one 3-star
+alternate when it has clear backup value. Downgrade the rest to 2-star Skip even
+when they are technically usable.
+
+Legacy portrait paths such as `人像/1/` and `人像/_contact_sheet.jpg` are
+obsolete. Use `portrait/` for all new work.
+
+Panorama stitching is prepared by organizing source frames, but `media-toolkit`
+does not currently include a high-quality stitcher. For final panorama output,
+use Lightroom Classic Photo Merge > Panorama, or an external toolchain such as
+Hugin/Enblend when installed. When building review sheets for candidate
+sequences, keep filename leading zeroes intact with `printf '%05d'` or explicit
+filenames. Temporary symlinks to HIF files may not be detected by
+`mt contact-sheet`; convert candidate HIF previews to temporary JPEG files
+instead, then delete that cache.
 
 ## Command Reference
 
@@ -119,6 +185,7 @@ Lanczos downscaling only when needed.
 ```bash
 mt contact-sheet /path/to/photos --export-only --exclude-dir PixCake
 mt contact-sheet --export-only --exclude-dir PixCake
+mt contact-sheet /path/to/photos --hif-only --exclude-dir portrait --exclude-dir panorama
 ```
 
 Generates contact sheet thumbnails and a `manifest.tsv` mapping sheet
@@ -126,14 +193,21 @@ positions back to source files.
 
 - Recursively scans common image formats
 - `--export-only` limits the scan to files under `Export`/`export` directories
+- `--hif-only` limits the scan to `.HIF`/`.hif` files below directories named
+  `hif`; this is the required mode for agent-led culling contact sheets
 - `--exclude-dir` can be repeated to ignore tool output directories
-- Supports `.hif` previews by converting them through a temporary internal JPEG
-  cache during rendering
+- Supports `.hif` previews by decoding them through FFmpeg when possible, with
+  a temporary internal JPEG fallback during rendering
 - Tile labels show filenames only by default; pass `--show-index` to prefix
   labels with manifest indexes such as `001`
+- The final sheet page contains only real image tiles and is not padded with
+  black or blank placeholders
 - For agent-led culling, place the final combined overview image at
-  `_contact_sheet.jpg` for non-portraits only; portrait overviews belong at
-  `人像/_contact_sheet.jpg`
+  `_contact_sheet.jpg` for non-portraits only, generated with `--hif-only`
+  from root `hif/` while excluding `portrait/` and `panorama/`; portrait
+  overviews belong at `portrait/_contact_sheet.jpg` and are generated from
+  `portrait/*/hif/`; panorama overviews belong at
+  `panorama/_contact_sheet.jpg` and are generated from `panorama/*/hif/`
 
 ### Media File Organization
 
