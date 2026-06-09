@@ -5,12 +5,19 @@ import argparse
 import sys
 from pathlib import Path
 
+from media_toolkit import rawpy_tools
+
 
 TEMP_ARTIFACT_NAMES = {
     ".codex_contact_tmp",
     ".codex_previews",
     "contact_sheets",
     "review_jpg",
+}
+ALLOWED_CONTACT_SHEETS = {
+    Path("_contact_sheet.jpg"),
+    Path("portrait/_contact_sheet.jpg"),
+    Path("panorama/_contact_sheet.jpg"),
 }
 
 
@@ -37,6 +44,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("directory", help="Shoot directory to verify")
+    parser.add_argument(
+        "--rawpy",
+        action="store_true",
+        help="Also verify each RAW can be opened and analyzed with rawpy/LibRaw.",
+    )
     return parser.parse_args(argv)
 
 
@@ -69,8 +81,6 @@ def check_pairing(
 
     for stem in sorted(raw_stems - hif_stems):
         report.issues.append(f"{label}: missing HIF for {stem}")
-    for stem in sorted(hif_stems - raw_stems):
-        report.issues.append(f"{label}: missing RAW for {stem}")
     if require_xmp:
         for stem in sorted(raw_stems - xmp_stems):
             report.issues.append(f"{label}: missing XMP for {stem}")
@@ -97,6 +107,11 @@ def check_contact_sheets(report: VerificationReport, root: Path) -> None:
     if numbered_children(panorama_dir) and not (panorama_dir / "_contact_sheet.jpg").exists():
         report.issues.append("missing panorama/_contact_sheet.jpg")
 
+    for path in sorted(root.rglob("*contact_sheet*.jpg")):
+        rel = path.relative_to(root)
+        if rel not in ALLOWED_CONTACT_SHEETS:
+            report.issues.append(f"redundant contact sheet remains: {rel}")
+
 
 def check_temp_artifacts(report: VerificationReport, root: Path) -> None:
     for path in root.rglob("*"):
@@ -104,7 +119,19 @@ def check_temp_artifacts(report: VerificationReport, root: Path) -> None:
             report.issues.append(f"temporary artifact remains: {path.relative_to(root)}")
 
 
-def verify_directory(root: Path, require_xmp: bool = False) -> VerificationReport:
+def check_rawpy_readability(report: VerificationReport, root: Path) -> None:
+    for raw_file in rawpy_tools.collect_raw_files(root):
+        try:
+            rawpy_tools.analyze_raw(raw_file)
+        except Exception as exc:
+            report.issues.append(f"rawpy failed for {raw_file.relative_to(root)}: {exc}")
+
+
+def verify_directory(
+    root: Path,
+    require_xmp: bool = False,
+    check_rawpy: bool = False,
+) -> VerificationReport:
     report = VerificationReport()
     check_pairing(report, "root", root / "raw", root / "hif", require_xmp=require_xmp)
 
@@ -128,6 +155,8 @@ def verify_directory(root: Path, require_xmp: bool = False) -> VerificationRepor
 
     check_contact_sheets(report, root)
     check_temp_artifacts(report, root)
+    if check_rawpy:
+        check_rawpy_readability(report, root)
     return report
 
 
@@ -148,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     if not root.exists() or not root.is_dir():
         print(f"Error: directory not found: {root}", file=sys.stderr)
         return 1
-    report = verify_directory(root)
+    report = verify_directory(root, check_rawpy=args.rawpy)
     print_report(report)
     return 0 if report.ok else 1
 

@@ -35,10 +35,11 @@ decisions.
 
 ## Color Calibration
 
-The previous experimental values `RedSaturation=8`, `GreenSaturation=6`,
-`BlueSaturation=8` were too strong for the user's preferred direction. Keep
-global Saturation at `0` by default, use little or no Vibrance, and prefer subtle
-Camera Calibration changes over direct saturation boosts.
+Keep global Saturation at `0` by default, use little or no Vibrance, and prefer
+Camera Calibration changes over direct saturation boosts. The user's refined
+lavender-field edits showed that scenic flower fields can tolerate much stronger
+calibration than earlier conservative defaults when HSL is simultaneously used
+to restrain the sky and greens.
 
 Use a softer default:
 
@@ -53,6 +54,22 @@ grassland, lake, neon, or skin-tone images, reduce or skip calibration
 saturation. For a Hasselblad-leaning direction, keep saturation restrained,
 protect highlight roll-off, make midtones slightly thicker, and separate blue
 and green subtly through calibration rather than high Vibrance.
+
+For bright travel flower fields with blue sky, distant mountains, and purple
+foreground color, use a stronger rough-edit starting range after visual review:
+
+```text
+RedSaturation=7 to 10
+GreenSaturation=9 to 12
+BlueSaturation=8 to 11
+SaturationAdjustmentBlue=-4 to -8
+Saturation=0
+Vibrance=2
+```
+
+This is not a general landscape default. Use it when the subject needs richer
+lavender/purple presence and the scene still stays believable after HSL sky
+control.
 
 ## Sony ST Influence, Capped
 
@@ -75,12 +92,13 @@ ToneCurvePV2012=0, 0, 66, 59, 125, 125, 182, 188, 255, 255
 Caps to keep the look natural:
 
 ```text
-Shadows2012=10 to 24
+Shadows2012=10 to 24 for conservative travel scenes; 45 to 75 can be used for
+open flower fields when the final look needs airy foreground detail
 Dehaze=1 to 4
 RedSaturation=2 to 4
 GreenSaturation=1 to 3
 BlueSaturation=0 to 2
-PostCropVignetteAmount=0 by default, or -3 to -6 only when it helps a centered landscape
+PostCropVignetteAmount=0 by default, or -1 to -3 only when it gently helps a centered landscape
 ```
 
 Do not inherit these `Sony ST.xmp` choices as defaults:
@@ -110,6 +128,20 @@ ToneCurvePV2012Red=0, 0, 255, 255
 ToneCurvePV2012Green=0, 0, 255, 255
 ToneCurvePV2012Blue=0, 0, 255, 255
 ```
+
+For lavender or flower-field travel scenes, the user's manual refinement favored
+a slightly lifted black point, gently deeper lower-mids, and softer top-end
+roll-off:
+
+```text
+ToneCurvePV2012=2, 5, 68, 55, 125, 124, 186, 193, 255, 250
+Contrast2012=-8 to -18
+Highlights2012=-78 to -90
+Shadows2012=50 to 85
+```
+
+Use this only when the scene has bright sky plus dense foreground flowers and
+needs a polished travel-photo softness rather than a punchy contrast edit.
 
 When writing only parametric curve fields, use this restrained equivalent:
 
@@ -148,9 +180,10 @@ Keep post-crop vignette off by default:
 PostCropVignetteAmount=0
 ```
 
-Use `-3` to `-6` only for centered landscapes or loose edges that need a little
-containment. Do not add vignette to panorama source frames before stitching;
-decide after the panorama has been merged.
+Use `-3` to `-5` only for centered landscapes or loose edges that need a little
+containment. The user's refined lavender-field set used `-5` consistently, but
+avoid visible dark corners and keep panorama source frames at `0` before
+stitching.
 
 ## Batch White Balance Consistency
 

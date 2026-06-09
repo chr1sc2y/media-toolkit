@@ -16,7 +16,7 @@ class PortraitOrganizeTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             manifest = Path(tmp) / "portraits.tsv"
             manifest.write_text(
-                "stem\tgroup\nDSC0001\t1\nDSC0002\t2\nDSC0003,2\n",
+                "stem\tgroup\nDSC0001\t1\nDSC_SKIP\t\nDSC0002\t2\nDSC0003,2\n",
                 encoding="utf-8",
             )
 

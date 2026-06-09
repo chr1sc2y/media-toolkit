@@ -32,9 +32,11 @@ def read_manifest(path: Path) -> list[ManifestEntry]:
             continue
         if values[0].lower() == "stem":
             continue
-        if len(values) < 2 or not values[0] or not values[1]:
+        if len(values) < 2 or not values[0]:
             raise ValueError(f"invalid manifest row {row_number}: expected stem and group")
         stem, group = values[0], values[1]
+        if not group:
+            continue
         if stem in seen:
             raise ValueError(f"duplicate stem in manifest: {stem}")
         seen.add(stem)

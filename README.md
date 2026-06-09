@@ -20,6 +20,8 @@ mt organize /path/to/import --dry-run
 mt organize
 mt fill-locations --describe
 mt contact-sheet /path/to/photos --export-only
+mt raw-analyze /path/to/photos --ratings ">=3"
+mt rawpy-render /path/to/photos --ratings ">=3"
 mt image-compress /path/to/photos --max-bytes 1048576
 ```
 
@@ -32,7 +34,7 @@ Reusable agent prompts live under `prompts/`. Keep photo folders in their
 original travel/import locations; do not copy large photo directories into this
 repository.
 
-For Lightroom RAW culling and rough edits:
+For photo initial culling and downstream edit branches:
 
 ```bash
 prompts/lightroom-raw-cull-and-rough-edit.md
@@ -42,7 +44,7 @@ Ask the agent to use that prompt with a photo directory:
 
 ```text
 使用 prompts/lightroom-raw-cull-and-rough-edit.md
-对 /path/to/photo-directory 执行 RAW 初筛和 Lightroom 粗修流程。
+对 /path/to/photo-directory 执行 RAW 初筛、评级和后续 LR/AI 分支流程。
 ```
 
 Workflow preset notes live under `presets/`, including the Sony ST travel base
@@ -52,8 +54,8 @@ During agent-led culling, portraits are separated by default. If one person is
 present, use `portrait/1/raw/` and `portrait/1/hif/`. If multiple people are
 present, use visual judgment to group them by person in first-appearance order:
 `portrait/1/`, `portrait/2/`, `portrait/3/`, etc. Each person directory keeps
-its own `raw/` and `hif/` split, then gets culled and rough-edited with gentler
-portrait settings.
+its own `raw/` and `hif/` split. Initial cull rates every RAW file but does not
+write XMP label fields or Lightroom rough-edit parameters.
 
 Panorama stitch sequences are separated by default. Detect them from
 consecutive frames with overlapping scenery, similar exposure settings, and
@@ -64,13 +66,14 @@ stitch tools can merge them later. Sidecars are always lowercase `.xmp` and
 include Lightroom-readable
 markers such as `crs:HasSettings=True`, `crs:AlreadyApplied=False`,
 `photoshop:SidecarForExtension=ARW`, `dc:format=image/x-sony-arw`, and
-`xmpMM:PreservedFileName`. Rough edits are customized from ISO, shutter,
-aperture, lens, RAW histogram evidence, and visual review; do not blindly apply
-one fixed preset. Automatic Upright/Level is off by default; use small manual
-`PerspectiveRotate` corrections only when a reviewed preview needs it. Sony
-portraits prefer `Camera PT` when available, while non-portraits
-prefer `Camera ST` or a natural Standard/ST fallback. Temporary JPEG caches such
-as `review_jpg/` should be deleted before the run is reported complete. Use HIF
+`xmpMM:PreservedFileName`. The LR branch writes rough edits later, customized
+from ISO, shutter, aperture, lens, RAW histogram evidence, and visual review;
+do not blindly apply one fixed preset. Automatic Upright/Level is off by
+default; use small manual `PerspectiveRotate` corrections only when a reviewed
+preview needs it. Sony portraits prefer `Camera PT` when available, while
+non-portraits prefer `Camera ST` or a natural Standard/ST fallback. Temporary
+JPEG caches such as `review_jpg/` should be deleted before the run is reported
+complete. Use HIF
 previews as the visual source for culling decisions, composition/focus review,
 and contact sheets, but not as the source of truth for RAW exposure or color
 grading because they already include Sony camera rendering. Prefer
@@ -78,7 +81,10 @@ grading because they already include Sony camera rendering. Prefer
 using HIF only as a visual aid. Do not use Lightroom `raw/Export/*.jpg` exports
 for portrait detection, panorama detection, culling review, or final contact
 sheets; when a portrait RAW moves, move the matching export JPG as an associated
-file only. If a review artifact
+file only. HIF-only files are normal backup files after rejected RAWs have been
+deleted during refinement; do not treat HIF files without RAW as a culling
+problem. The required pairing check is one-way: every remaining RAW should have
+a matching HIF preview when the camera produced one. If a review artifact
 is useful, use `mt contact-sheet --hif-only` and prefer a single low-resolution
 `_contact_sheet.jpg` in the photo directory for non-portraits only, sourced
 from `hif/` and excluding `portrait/` and `panorama/`. If portraits exist, also
@@ -87,9 +93,13 @@ numbered portrait group shown as a separate section. If panorama groups exist,
 write `panorama/_contact_sheet.jpg` from `panorama/*/hif/` only. Final contact
 sheets should not pad the last page with black or blank placeholder tiles.
 
-Final refinement candidates are photos rated `>=3` stars. Base XMP settings
-are still written for every RAW, but 3/4/5-star files are the default pool for
-manual final editing, export, and featured selection.
+Final refinement candidates are photos rated `>=3` stars. Initial cull writes
+ratings for every RAW file; both downstream branches operate on every `>=3`
+star candidate. The LR branch writes Lightroom/Camera Raw rough-edit XMP
+parameters for `>=3` star RAW files. The AI branch generates edited output for
+`>=3` star candidates and stores those images under `codex/` beside the source
+group: root `codex/` for ordinary photos, `portrait/<n>/codex/` for portraits,
+and `panorama/<n>/codex/` for panorama groups.
 
 Editing consistency is mandatory for each batch. Final-candidate images from
 the same scene/weather should share the same core edit skeleton: camera profile,
@@ -132,10 +142,13 @@ scripts, and agent instructions.
 
 | Command | Meaning | Default path behavior |
 | --- | --- | --- |
-| `mt featured` | Copy files whose names match items in `raw/` into `featured/`. | Uses current directory when no path is passed. |
+| `mt featured` | Copy original HIF previews whose names match RAW items into `featured/`. | Uses current directory when no path is passed. |
 | `mt organize` | Move camera media into type folders such as `raw/` and `hif/`. | Uses current directory when no path is passed. |
 | `mt fill-locations` | Plan or apply missing Apple Photos geolocation fixes. | Works on Apple Photos, not the current directory. |
 | `mt contact-sheet` | Generate contact sheet images and `manifest.tsv`. | Uses current directory when no path is passed. |
+| `mt raw-analyze` | Write RAW histogram and clipping metrics for culling evidence. | Uses current directory when no path is passed. |
+| `mt lr-plan` | Suggest Lightroom exposure sliders from RAW histogram evidence. | Uses current directory when no path is passed. |
+| `mt rawpy-render` | Render RAW-derived JPEG inputs for selected candidates. | Uses current directory when no path is passed. |
 | `mt image-compress` | Compress oversized JPG/JPEG files under a byte cap. | Uses current directory when no path is passed. |
 | `mt drone` | Compress drone `.mp4` video with the DJI-oriented preset. | Uses current directory when no path is passed. |
 | `mt png-to-jpg` | Convert `.png` images to `.jpg`. | Uses current directory when no path is passed. |
@@ -143,6 +156,39 @@ scripts, and agent instructions.
 Compatibility aliases still work for interactive use, but they are intentionally
 not the documented interface: `mt f`, `mt o`, `mt loc`, `mt sheet`, `mt imgzip`,
 and `mt png`.
+
+### RAW Analysis And Rendering
+
+```bash
+mt raw-analyze /path/to/photos
+mt raw-analyze /path/to/photos --ratings ">=3"
+mt lr-plan /path/to/photos --ratings ">=3"
+mt lr-plan /path/to/photos --ratings ">=3" --style flower
+mt rawpy-render /path/to/photos --ratings ">=3"
+```
+
+`mt raw-analyze` reads RAW files through rawpy/LibRaw and writes `raw_stats.tsv`
+with linear RAW histogram evidence: black/white levels, percentile brightness,
+clipping ratios, shadow ratios, per-channel clipping, and white-balance metadata.
+Use it as exposure evidence for culling and LR rough edits; it does not replace
+HIF visual review, contact sheets, or human rating judgment.
+
+`mt lr-plan` turns RAW histogram evidence into an auditable Lightroom plan for
+`Exposure2012`, `Highlights2012`, `Shadows2012`, `Whites2012`, `Blacks2012`,
+and `Contrast2012`. It aligns exposure against the candidate batch median, then
+adds per-image high-light protection, shadow recovery, white point restraint,
+and black point recovery from RAW clipping and shadow-risk signals. Use
+`--style flower` for lavender or flower-field travel scenes where the desired
+LR direction is softer contrast, stronger high-light protection, and airier
+foreground shadows. The command writes `lr_plan.tsv`; it does not edit XMP by
+itself.
+
+`mt rawpy-render` creates RAW-derived JPEG inputs for downstream AI work. By
+default it renders `>=3` star RAW files from their lowercase `.xmp` ratings and
+writes quality 96, 4:4:4 JPEGs to `codex/rawpy_inputs/` beside the source RAW
+group, including `portrait/<n>/codex/rawpy_inputs/` and
+`panorama/<n>/codex/rawpy_inputs/`. These are temporary AI input caches, not
+final edits.
 
 ### Drone Video Compression
 
@@ -208,6 +254,27 @@ positions back to source files.
   overviews belong at `portrait/_contact_sheet.jpg` and are generated from
   `portrait/*/hif/`; panorama overviews belong at
   `panorama/_contact_sheet.jpg` and are generated from `panorama/*/hif/`
+- Remove redundant review sheets such as `_select_contact_sheet.jpg`,
+  `_review_contact_sheet.jpg`, or other ad hoc `*contact_sheet*.jpg` outputs
+  before reporting completion; the final allowed paths are only
+  `_contact_sheet.jpg`, `portrait/_contact_sheet.jpg`, and
+  `panorama/_contact_sheet.jpg`
+
+### Featured Extraction
+
+```bash
+mt featured /path/to/photos
+mt featured
+```
+
+Runs after refinement when `raw/` contains the selected RAW files whose original
+HIF previews should be collected.
+
+- RAW filenames in `raw/` define the selected stems
+- matching original HIF previews are copied from `hif/`, `portrait/<n>/hif/`,
+  and `panorama/<n>/hif/`
+- Lightroom exports under `raw/Export/` are not copied by this command
+- missing HIF files are reported clearly
 
 ### Media File Organization
 

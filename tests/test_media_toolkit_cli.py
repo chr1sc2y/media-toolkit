@@ -30,7 +30,11 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("contact-sheet").script_name, "generate_contact_sheets.py")
         self.assertEqual(resolve_command("portrait-organize").script_name, "portrait_organize.py")
         self.assertEqual(resolve_command("panorama-organize").script_name, "panorama_organize.py")
+        self.assertEqual(resolve_command("manifest-template").script_name, "manifest_template.py")
         self.assertEqual(resolve_command("verify-cull").script_name, "verify_cull.py")
+        self.assertEqual(resolve_command("raw-analyze").script_name, "raw_analyze.py")
+        self.assertEqual(resolve_command("lr-plan").script_name, "lr_plan.py")
+        self.assertEqual(resolve_command("rawpy-render").script_name, "rawpy_render.py")
         self.assertEqual(resolve_command("image-compress").script_name, "compress_images_under_size.py")
         self.assertEqual(resolve_command("png-to-jpg").script_name, "png_to_jpg.py")
 
@@ -167,11 +171,73 @@ class MediaToolkitCliTest(unittest.TestCase):
 
         self.assertEqual(argv, ["panorama_organize.py", "/tmp/photos"])
 
+    def test_manifest_template_value_options_do_not_count_as_directory(self):
+        command = resolve_command("manifest-template")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--kind", "portrait", "--output", "/tmp/portrait_manifest.tsv"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
+    def test_manifest_template_with_directory_passes_kind_option(self):
+        command = resolve_command("manifest-template")
+        argv = build_script_argv(
+            command,
+            ["/tmp/photos", "--kind", "panorama"],
+            interactive=False,
+        )
+
+        self.assertEqual(argv, ["manifest_template.py", "/tmp/photos", "--kind", "panorama"])
+
     def test_verify_cull_with_directory_passes_path(self):
         command = resolve_command("verify-cull")
         argv = build_script_argv(command, ["/tmp/photos"], interactive=False)
 
         self.assertEqual(argv, ["verify_cull.py", "/tmp/photos"])
+
+    def test_raw_analyze_value_options_do_not_count_as_directory(self):
+        command = resolve_command("raw-analyze")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--output", "/tmp/raw_stats.tsv", "--ratings", ">=3"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
+    def test_lr_plan_value_options_do_not_count_as_directory(self):
+        command = resolve_command("lr-plan")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--output", "/tmp/lr_plan.tsv", "--ratings", ">=3", "--style", "flower"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
+    def test_rawpy_render_value_options_do_not_count_as_directory(self):
+        command = resolve_command("rawpy-render")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--output-dir", "/tmp/rawpy_inputs", "--ratings", ">=3", "--quality", "96"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
 
     def test_resolve_default_directory_accepts_only_lowercase_y(self):
         with TemporaryDirectory() as tmp:
@@ -222,7 +288,11 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIn("mt fill-locations", table)
         self.assertIn("mt portrait-organize", table)
         self.assertIn("mt panorama-organize", table)
+        self.assertIn("mt manifest-template", table)
         self.assertIn("mt verify-cull", table)
+        self.assertIn("mt raw-analyze", table)
+        self.assertIn("mt lr-plan", table)
+        self.assertIn("mt rawpy-render", table)
         self.assertIsNone(re.search(r"^\s*mt f\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt o\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt loc\s", table, re.MULTILINE))

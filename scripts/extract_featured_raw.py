@@ -3,10 +3,9 @@
 Featured Files Extractor
 
 This script extracts featured files based on raw directory contents:
-1. Extract all file names (without extensions) recursively from the 'raw' subdirectory (and any subdirs)
-2. Find all files with matching names (case-insensitive) in the target/base directory 
-   and common image subdirectories (heif, hif, jpeg, jpg, etc.)
-3. Copy these matching files to a new 'featured' subdirectory
+1. Extract RAW file names (without extensions) recursively from the 'raw' subdirectory
+2. Find original HIF previews with matching names in hif/ directories
+3. Copy these matching HIF files to a new 'featured' subdirectory
 
 Supports recursive mode (-r) to process every subdirectory tree that contains its own 'raw' folder.
 
@@ -31,9 +30,8 @@ import shutil
 import sys
 from pathlib import Path
 
-# Common image format subdirectories to search
-# Empty string represents the base directory itself
-IMAGE_SUBDIRS = ['', 'heif', 'hif', 'jpeg', 'jpg', 'HEIF', 'HIF', 'JPEG', 'JPG']
+RAW_EXTS = {".arw", ".cr2", ".cr3", ".nef", ".raf", ".rw2", ".dng"}
+FEATURED_EXTS = {".hif"}
 
 
 def _normalize_directory_input(raw_input: str) -> Path:
@@ -75,13 +73,13 @@ def _get_image_search_directories(base_dir: Path) -> list[Path]:
     """
     Return the directories to search for candidate featured files.
 
-    - Always includes the base directory itself (unless it is named 'raw' or 'featured').
-    - Plus any direct subdirectories whose name (case-insensitive) is in the
-      IMAGE_SUBDIRS whitelist (e.g. 'hif', 'jpg', 'HEIF', etc.).
+    - Includes root-level `hif/`.
+    - Includes grouped preview directories such as `portrait/<n>/hif/` and
+      `panorama/<n>/hif/`.
+    - Does not search Export folders. Featured files are original HIF previews.
 
-    On case-insensitive filesystems (macOS, Windows), this deduplicates so that
-    'hif' and 'HIF' (which refer to the same physical directory) are not both
-    scanned. The real on-disk directory name/casing is preserved for display.
+    On case-insensitive filesystems (macOS, Windows), this deduplicates paths.
+    The real on-disk directory name/casing is preserved for display.
 
     This avoids duplicate "Match" lines and spurious "Skipped (already exists)"
     messages when the only reason for duplicates is case variants of the folder name.
@@ -89,29 +87,45 @@ def _get_image_search_directories(base_dir: Path) -> list[Path]:
     search_dirs: list[Path] = []
     seen: set[Path] = set()
 
-    # 1. The base directory itself
-    if base_dir.exists() and base_dir.is_dir():
-        if base_dir.name.lower() not in ('raw', 'featured'):
-            real = base_dir.resolve()
-            if real not in seen:
-                seen.add(real)
-                search_dirs.append(base_dir)
+    def add_dir(path: Path) -> None:
+        if not path.exists() or not path.is_dir():
+            return
+        real = path.resolve()
+        if real not in seen:
+            seen.add(real)
+            search_dirs.append(path)
 
-    # 2. Whitelisted image subdirectories (discovered via actual iterdir so we get real casing)
-    wanted = {d.lower() for d in IMAGE_SUBDIRS if d}
-    try:
-        for entry in base_dir.iterdir():
-            if entry.is_dir():
-                name_l = entry.name.lower()
-                if name_l in wanted and name_l not in ('raw', 'featured'):
-                    real = entry.resolve()
-                    if real not in seen:
-                        seen.add(real)
-                        search_dirs.append(entry)
-    except PermissionError:
-        pass
+    add_dir(base_dir / "hif")
+    for group_root in (base_dir / "portrait", base_dir / "panorama"):
+        if not group_root.exists():
+            continue
+        try:
+            for child in group_root.iterdir():
+                if child.is_dir():
+                    add_dir(child / "hif")
+        except PermissionError:
+            pass
 
     return search_dirs
+
+
+def _display_search_dir(base_dir: Path, search_dir: Path) -> str:
+    try:
+        return str(search_dir.relative_to(base_dir))
+    except ValueError:
+        return search_dir.name
+
+
+def _scan_raw_stems(raw_dir: Path) -> set[str]:
+    raw_file_names: set[str] = set()
+    for file_path in raw_dir.rglob("*"):
+        if not file_path.is_file():
+            continue
+        if file_path.stem.startswith("."):
+            continue
+        if file_path.suffix.lower() in RAW_EXTS:
+            raw_file_names.add(file_path.stem.lower())
+    return raw_file_names
 
 
 def get_target_directory():
@@ -234,16 +248,11 @@ def process_files(base_dir):
     print(f"Raw directory: {raw_dir}")
     print(f"Featured directory: {featured_dir}")
 
-    # Step 1: Extract all file names (without extensions) from raw directory and all its subdirectories (recursive)
-    print(f"\n{'Step 1: Scanning raw directory (recursively all subdirectories)':-<50}")
-    raw_file_names = set()
+    # Step 1: Extract RAW file names (without extensions) from raw directory and subdirectories.
+    print(f"\n{'Step 1: Scanning raw directory (recursively all RAW files)':-<50}")
 
     try:
-        for file_path in raw_dir.rglob("*"):
-            if file_path.is_file():
-                file_stem = file_path.stem.lower()
-                if not file_stem.startswith('.'):
-                    raw_file_names.add(file_stem)
+        raw_file_names = _scan_raw_stems(raw_dir)
     except PermissionError:
         print(f"Error: Permission denied accessing '{raw_dir}'")
         return False
@@ -258,11 +267,16 @@ def process_files(base_dir):
     print(f"\n{'Step 2: Finding matching files':-<50}")
     search_dirs = _get_image_search_directories(base_dir)
     subdir_names = [d.name for d in search_dirs if d != base_dir]
-    if subdir_names:
-        print(f"   Searching in: base directory + {subdir_names}")
+    if search_dirs:
+        print(
+            "   Searching in HIF directories: "
+            + ", ".join(_display_search_dir(base_dir, directory) for directory in search_dirs)
+        )
+    elif subdir_names:
+        print(f"   Searching in HIF directories: {subdir_names}")
     else:
-        print(f"   Searching in: base directory only")
-    matching_files: list[Path] = []
+        print("   Searching in HIF directories: none found")
+    matching_files_by_stem: dict[str, Path] = {}
     searched_dirs: list[Path] = []
     seen_matches: set[Path] = set()  # dedup by real filesystem path (handles any edge cases)
 
@@ -278,29 +292,36 @@ def process_files(base_dir):
                     # Skip system files
                     if file_stem.startswith('.'):
                         continue
-                    if file_stem in raw_file_names:
+                    if file_stem in raw_file_names and file_path.suffix.lower() in FEATURED_EXTS:
+                        if file_stem in matching_files_by_stem:
+                            continue
                         real = file_path.resolve()
                         if real in seen_matches:
                             continue
                         seen_matches.add(real)
-                        matching_files.append(file_path)
+                        matching_files_by_stem[file_stem] = file_path
 
                         # Show relative path for subdirectory files, using the *real* dir name on disk
                         if is_base:
                             print(f"   ✓ Match: {file_path.name}")
                         else:
-                            print(f"   ✓ Match: {search_dir.name}/{file_path.name}")
+                            print(f"   ✓ Match: {_display_search_dir(base_dir, search_dir)}/{file_path.name}")
         except PermissionError:
             print(f"   ⚠️  Permission denied: {search_dir}")
             continue
     
     print(f"   📂 Searched directories: {len(searched_dirs)}")
     
+    matching_files = [matching_files_by_stem[stem] for stem in sorted(matching_files_by_stem)]
+
     if not matching_files:
         print("   Warning: No matching files found in any searched directory.")
         return False
         
     print(f"   📊 Total matching files: {len(matching_files)}")
+    missing_hif = sorted(raw_file_names - set(matching_files_by_stem))
+    if missing_hif:
+        print(f"   ⚠️  Missing matching HIF files: {', '.join(missing_hif)}")
     
     # Step 3: Create featured directory and copy files
     print(f"\n{'Step 3: Copying files to featured directory':-<50}")
@@ -309,6 +330,11 @@ def process_files(base_dir):
         # Create featured directory (if it doesn't exist)
         featured_dir.mkdir(exist_ok=True)
         print(f"   📁 Directory ready: {featured_dir}")
+        for existing in featured_dir.iterdir():
+            if existing.is_file():
+                existing.unlink()
+            elif existing.is_dir() and existing.name == "contact_sheets":
+                shutil.rmtree(existing)
         
         # Copy files
         copied_count = 0
@@ -340,7 +366,7 @@ def process_files(base_dir):
         if failed_count > 0:
             print(f"   ❌ Failed to copy: {failed_count} files")
         print(f"   📂 Destination: {featured_dir}")
-        
+
         return copied_count > 0
         
     except Exception as e:

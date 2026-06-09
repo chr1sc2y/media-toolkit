@@ -2,6 +2,7 @@ import importlib.util
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "verify_cull.py"
@@ -41,6 +42,19 @@ class VerifyCullTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertTrue(any("missing HIF" in issue for issue in report.issues))
 
+    def test_verify_allows_hif_only_backups(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._touch_pair(root / "raw", root / "hif", "DSC0001")
+            (root / "hif/DSC0002.HIF").write_text("hif", encoding="utf-8")
+            (root / "_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
+
+            report = verify_cull.verify_directory(root)
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.counts["root"].raw, 1)
+        self.assertEqual(report.counts["root"].hif, 2)
+
     def test_verify_fails_when_portrait_sheet_missing(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -65,6 +79,18 @@ class VerifyCullTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertTrue(any("temporary artifact" in issue for issue in report.issues))
 
+    def test_verify_fails_on_redundant_contact_sheet_files(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._touch_pair(root / "raw", root / "hif", "DSC0001")
+            (root / "_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
+            (root / "_select_contact_sheet.jpg").write_text("old sheet", encoding="utf-8")
+
+            report = verify_cull.verify_directory(root)
+
+        self.assertFalse(report.ok)
+        self.assertTrue(any("redundant contact sheet" in issue for issue in report.issues))
+
     def test_main_returns_nonzero_when_report_has_issues(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -74,6 +100,22 @@ class VerifyCullTest(unittest.TestCase):
             exit_code = verify_cull.main([str(root)])
 
         self.assertEqual(exit_code, 1)
+
+    def test_verify_rawpy_reports_unreadable_raw_when_enabled(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._touch_pair(root / "raw", root / "hif", "DSC0001")
+            (root / "_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
+
+            with patch.object(
+                verify_cull.rawpy_tools,
+                "analyze_raw",
+                side_effect=RuntimeError("unsupported raw"),
+            ):
+                report = verify_cull.verify_directory(root, check_rawpy=True)
+
+        self.assertFalse(report.ok)
+        self.assertTrue(any("rawpy failed" in issue for issue in report.issues))
 
     def _touch_pair(self, raw_dir: Path, hif_dir: Path, stem: str):
         raw_dir.mkdir(parents=True, exist_ok=True)
