@@ -230,6 +230,106 @@ class RawPyToolsTest(unittest.TestCase):
         self.assertEqual(rows[0]["Exposure2012"], "0.25")
         self.assertEqual(rows[0]["Highlights2012"], "-70")
 
+    def test_build_lr_xmp_fields_uses_flower_rich_style_skeleton(self):
+        plan = rawpy_tools.LrPlan(
+            path=Path("/shoot/raw/DSC0001.ARW"),
+            stem="DSC0001",
+            rating=4,
+            exposure2012=0.34,
+            highlights2012=-82,
+            shadows2012=75,
+            whites2012=8,
+            blacks2012=-8,
+            contrast2012=-12,
+            rationale="example",
+        )
+
+        fields = rawpy_tools.build_lr_xmp_fields(plan, style="flower-rich")
+
+        self.assertEqual(fields["CameraProfile"], "Camera ST")
+        self.assertEqual(fields["WhiteBalance"], "Custom")
+        self.assertEqual(fields["Temperature"], "5450")
+        self.assertEqual(fields["Tint"], "+11")
+        self.assertEqual(fields["Exposure2012"], "+0.34")
+        self.assertEqual(fields["Highlights2012"], "-82")
+        self.assertEqual(fields["Shadows2012"], "+75")
+        self.assertEqual(fields["Contrast2012"], "-12")
+        self.assertEqual(fields["ToneCurvePV2012"], "2, 5, 68, 55, 125, 124, 186, 193, 255, 250")
+        self.assertEqual(fields["RedSaturation"], "+10")
+        self.assertEqual(fields["GreenSaturation"], "+12")
+        self.assertEqual(fields["BlueSaturation"], "+11")
+        self.assertEqual(fields["SaturationAdjustmentBlue"], "-4")
+        self.assertEqual(fields["PostCropVignetteAmount"], "-5")
+        self.assertEqual(fields["PerspectiveUpright"], "0")
+
+    def test_build_lr_xmp_fields_has_learned_lake_and_nine_bends_profiles(self):
+        plan = rawpy_tools.LrPlan(
+            path=Path("/shoot/raw/DSC0001.ARW"),
+            stem="DSC0001",
+            rating=4,
+            exposure2012=0.01,
+            highlights2012=-85,
+            shadows2012=81,
+            whites2012=8,
+            blacks2012=-12,
+            contrast2012=-1,
+            rationale="example",
+        )
+
+        lake = rawpy_tools.build_lr_xmp_fields(plan, style="sairim-lake-east")
+        bends = rawpy_tools.build_lr_xmp_fields(plan, style="bayanbulak-nine-bends")
+
+        self.assertEqual(lake["Temperature"], "5250")
+        self.assertEqual(lake["Tint"], "+14")
+        self.assertEqual(lake["RedSaturation"], "+4")
+        self.assertEqual(lake["GreenSaturation"], "+2")
+        self.assertEqual(lake["BlueSaturation"], "+6")
+        self.assertEqual(bends["CameraProfile"], "Adobe Standard")
+        self.assertEqual(bends["Dehaze"], "+6")
+        self.assertEqual(bends["GreenSaturation"], "+14")
+        self.assertEqual(bends["SaturationAdjustmentYellow"], "+17")
+
+    def test_write_lr_xmp_preserves_rating_and_adds_sidecar_markers(self):
+        plan = rawpy_tools.LrPlan(
+            path=Path("/shoot/raw/DSC0001.ARW"),
+            stem="DSC0001",
+            rating=5,
+            exposure2012=0.5,
+            highlights2012=-85,
+            shadows2012=81,
+            whites2012=8,
+            blacks2012=-12,
+            contrast2012=-10,
+            rationale="example",
+        )
+
+        with TemporaryDirectory() as tmp:
+            raw_file = Path(tmp) / "raw" / "DSC0001.ARW"
+            raw_file.parent.mkdir()
+            raw_file.write_text("raw", encoding="utf-8")
+            xmp_file = raw_file.with_suffix(".xmp")
+            xmp_file.write_text('<rdf:Description xmp:Rating="5" />', encoding="utf-8")
+
+            rawpy_tools.write_lr_xmp_sidecar(
+                raw_file,
+                rawpy_tools.build_lr_xmp_fields(plan, style="flower-rich"),
+                rating=5,
+            )
+            text = xmp_file.read_text(encoding="utf-8")
+
+        self.assertIn('xmp:Rating="5"', text)
+        self.assertIn('crs:CameraProfile="Camera ST"', text)
+        self.assertIn('crs:Exposure2012="+0.50"', text)
+        self.assertIn('crs:Highlights2012="-85"', text)
+        self.assertIn('crs:RedSaturation="+10"', text)
+        self.assertIn("<crs:ToneCurvePV2012>", text)
+        self.assertIn("<rdf:li>2, 5</rdf:li>", text)
+        self.assertIn("<rdf:li>255, 250</rdf:li>", text)
+        self.assertIn('crs:PerspectiveUpright="0"', text)
+        self.assertIn('photoshop:SidecarForExtension="ARW"', text)
+        self.assertIn('dc:format="image/x-sony-arw"', text)
+        self.assertIn('xmpMM:PreservedFileName="DSC0001.ARW"', text)
+
     def _stats(
         self,
         stem,

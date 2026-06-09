@@ -21,15 +21,25 @@ class Command:
     help: str
     default_cwd: bool = False
     options_with_values: tuple[str, ...] = ()
+    visible: bool = True
 
 
 COMMANDS = (
     Command(
+        canonical="finalize",
+        aliases=(),
+        script_name="finalize.py",
+        help="Copy matching original HIF previews into the photo directory's featured/ folder.",
+        default_cwd=True,
+        options_with_values=("--scene",),
+    ),
+    Command(
         canonical="featured",
         aliases=("f", "feature"),
         script_name="extract_featured_raw.py",
-        help="Copy files matching raw/ stems into featured/.",
+        help="Compatibility shortcut for old featured HIF extraction.",
         default_cwd=True,
+        visible=False,
     ),
     Command(
         canonical="organize",
@@ -110,6 +120,14 @@ COMMANDS = (
         help="Suggest Lightroom exposure sliders from RAW histogram evidence.",
         default_cwd=True,
         options_with_values=("--output", "--ratings", "--style"),
+    ),
+    Command(
+        canonical="lr-apply",
+        aliases=(),
+        script_name="lr_apply.py",
+        help="Write Lightroom rough-edit XMP fields from RAW evidence and style profiles.",
+        default_cwd=True,
+        options_with_values=("--ratings", "--style"),
     ),
     Command(
         canonical="rawpy-render",
@@ -258,6 +276,8 @@ def build_script_argv(
 def command_table() -> str:
     lines = []
     for command in COMMANDS:
+        if not command.visible:
+            continue
         lines.append(f"  mt {command.canonical:<16} {command.help}")
     return "\n".join(lines)
 
@@ -270,10 +290,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         epilog=(
             f"Commands:\n{command_table()}\n\n"
             "Examples:\n"
-            "  mt featured\n"
+            "  mt finalize --scene flower-field\n"
             "  mt organize --dry-run\n"
             "  mt fill-locations --describe\n"
-            "  mt contact-sheet --export-only"
+            "  mt contact-sheet --export-only\n"
+            "  mt lr-apply --style flower-rich"
         ),
     )
     parser.add_argument("command", nargs="?", help="Command or alias to run.")

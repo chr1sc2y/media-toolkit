@@ -117,9 +117,18 @@ For non-portraits, keep `Camera ST`. Reserve `Camera PT` for portraits.
 ## Tone Curve
 
 Use a very light contrast curve when the image benefits from it. The goal is
-more depth, not a crushed look. The user's `Sony ST.xmp` point curve is a good
-low-strength reference for landscapes because it slightly deepens lower tones,
-leaves the midtone anchor neutral, and gently lifts upper tones:
+more depth, not a crushed look. The user's preferred point-curve habit is a
+gentle S curve that protects both ends: keep the black point slightly lifted or
+uncrushed, roll the white point down when highlights need protection, deepen the
+lower-mids a little, and lift the upper-mids a little. This is reasonable as a
+default taste direction because it prevents dead blacks and hard pure whites
+while still adding a little local contrast. Keep the curve subtle, and adjust
+the exact endpoints and midpoints per scene instead of treating one numeric
+curve as universal.
+
+The user's `Sony ST.xmp` point curve is a good low-strength reference for
+landscapes because it slightly deepens lower tones, leaves the midtone anchor
+neutral, and gently lifts upper tones:
 
 ```text
 ToneCurveName2012=Custom

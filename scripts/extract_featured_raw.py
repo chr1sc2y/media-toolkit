@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Featured Files Extractor
+Final HIF Copier
 
-This script extracts featured files based on raw directory contents:
-1. Extract RAW file names (without extensions) recursively from the 'raw' subdirectory
+This script copies final HIF previews based on Lightroom export contents:
+1. Extract exported file names from raw/Export/ and portrait/*/raw/Export/
 2. Find original HIF previews with matching names in hif/ directories
-3. Copy these matching HIF files to a new 'featured' subdirectory
+3. Copy these matching HIF files to the photo directory's featured/ folder
 
 Supports recursive mode (-r) to process every subdirectory tree that contains its own 'raw' folder.
 
@@ -18,9 +18,7 @@ Usage:
 Examples:
     python extract_featured_raw.py /path/to/photos
     python extract_featured_raw.py "C:\\Users\\Photos\\Event"
-    python extract_featured_raw.py  # Interactive mode
     python extract_featured_raw.py /path/to/event_root --recursive
-    python extract_featured_raw.py -r  # Interactive + recursive over subdirs
 """
 
 import argparse
@@ -30,7 +28,7 @@ import shutil
 import sys
 from pathlib import Path
 
-RAW_EXTS = {".arw", ".cr2", ".cr3", ".nef", ".raf", ".rw2", ".dng"}
+EXPORT_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png"}
 FEATURED_EXTS = {".hif"}
 
 
@@ -71,12 +69,14 @@ def _normalize_directory_input(raw_input: str) -> Path:
 
 def _get_image_search_directories(base_dir: Path) -> list[Path]:
     """
-    Return the directories to search for candidate featured files.
+    Return the directories to search for final HIF previews.
 
     - Includes root-level `hif/`.
-    - Includes grouped preview directories such as `portrait/<n>/hif/` and
-      `panorama/<n>/hif/`.
-    - Does not search Export folders. Featured files are original HIF previews.
+    - Includes grouped portrait preview directories such as
+      `portrait/<n>/hif/`.
+    - Does not include `panorama/<n>/hif/`; panorama source-frame previews are
+      not copied into the final destination.
+    - Does not search Export folders. Final files are original HIF previews.
 
     On case-insensitive filesystems (macOS, Windows), this deduplicates paths.
     The real on-disk directory name/casing is preserved for display.
@@ -96,9 +96,8 @@ def _get_image_search_directories(base_dir: Path) -> list[Path]:
             search_dirs.append(path)
 
     add_dir(base_dir / "hif")
-    for group_root in (base_dir / "portrait", base_dir / "panorama"):
-        if not group_root.exists():
-            continue
+    group_root = base_dir / "portrait"
+    if group_root.exists():
         try:
             for child in group_root.iterdir():
                 if child.is_dir():
@@ -109,6 +108,30 @@ def _get_image_search_directories(base_dir: Path) -> list[Path]:
     return search_dirs
 
 
+def _get_export_scan_directories(base_dir: Path) -> list[Path]:
+    export_dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    def add_dir(path: Path) -> None:
+        if not path.exists() or not path.is_dir():
+            return
+        real = path.resolve()
+        if real not in seen:
+            seen.add(real)
+            export_dirs.append(path)
+
+    add_dir(base_dir / "raw" / "Export")
+    group_root = base_dir / "portrait"
+    if group_root.exists():
+        try:
+            for child in group_root.iterdir():
+                if child.is_dir():
+                    add_dir(child / "raw" / "Export")
+        except PermissionError:
+            pass
+    return export_dirs
+
+
 def _display_search_dir(base_dir: Path, search_dir: Path) -> str:
     try:
         return str(search_dir.relative_to(base_dir))
@@ -116,16 +139,16 @@ def _display_search_dir(base_dir: Path, search_dir: Path) -> str:
         return search_dir.name
 
 
-def _scan_raw_stems(raw_dir: Path) -> set[str]:
-    raw_file_names: set[str] = set()
-    for file_path in raw_dir.rglob("*"):
+def _scan_export_stems(export_dir: Path) -> set[str]:
+    export_file_names: set[str] = set()
+    for file_path in export_dir.iterdir():
         if not file_path.is_file():
             continue
         if file_path.stem.startswith("."):
             continue
-        if file_path.suffix.lower() in RAW_EXTS:
-            raw_file_names.add(file_path.stem.lower())
-    return raw_file_names
+        if file_path.suffix.lower() in EXPORT_EXTS:
+            export_file_names.add(file_path.stem.lower())
+    return export_file_names
 
 
 def get_target_directory():
@@ -136,15 +159,13 @@ def get_target_directory():
         tuple[Path, bool]: The validated target directory path and whether recursive mode is enabled
     """
     parser = argparse.ArgumentParser(
-        description='Extract featured files based on raw directory contents (supports recursive processing of multiple event dirs)',
+        description='Copy final HIF previews based on Lightroom exports (supports recursive processing of multiple event dirs)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s /path/to/photos              # Use specific directory
-  %(prog)s "C:\\Photos\\Event"           # Windows path with spaces
-  %(prog)s                             # Interactive mode
-  %(prog)s /path/to/root -r             # Recursive: process all subdirs with raw/
-  %(prog)s -r                           # Interactive + recursive
+  %(prog)s /path/to/photos
+  %(prog)s "C:\\Photos\\Event"
+  %(prog)s /path/to/root -r
         """
     )
     parser.add_argument(
@@ -162,9 +183,7 @@ Examples:
         action='store_true',
         help='Recursively find and process all subdirectories (including the target) that contain a "raw" subdirectory'
     )
-    
     args = parser.parse_args()
-    
     if args.directory:
         # Command line argument provided
         target_dir = _normalize_directory_input(args.directory)
@@ -174,7 +193,7 @@ Examples:
         if not target_dir.is_dir():
             print(f"Error: '{target_dir}' is not a directory.")
             sys.exit(1)
-        return target_dir, args.recursive
+        return target_dir, args.recursive, target_dir / "featured"
     else:
         # Interactive mode: prompt user for directory
         print("Interactive mode: Please specify the target directory.")
@@ -186,11 +205,11 @@ Examples:
             if not user_input:
                 target_dir = Path.cwd()
                 print(f"Using current directory: {target_dir}")
-                return target_dir, args.recursive
+                return target_dir, args.recursive, target_dir / "featured"
             else:
                 target_dir = _normalize_directory_input(raw_input)
                 if target_dir.exists() and target_dir.is_dir():
-                    return target_dir, args.recursive
+                    return target_dir, args.recursive, target_dir / "featured"
                 else:
                     print(f"Error: '{target_dir}' does not exist or is not a directory.")
                     print("Please try again or press Enter to use current directory.")
@@ -200,7 +219,7 @@ def find_directories_with_raw(root: Path) -> list[Path]:
     """
     Recursively find all directories under root (including root itself) that
     directly contain a 'raw' subdirectory. Prunes traversal into raw/ and
-    featured/ to avoid spurious matches.
+    featured/ to avoid spurious matches from older runs.
     
     Args:
         root (Path): Starting directory to search from.
@@ -215,53 +234,61 @@ def find_directories_with_raw(root: Path) -> list[Path]:
         raw_dir = current / "raw"
         if raw_dir.is_dir():
             found.append(current)
-            # Do not descend into raw/ or featured/ for other potential bases
+            # Do not descend into raw/ or legacy featured/ for other potential bases.
             dirnames[:] = [
                 d for d in dirnames if d.lower() not in ("raw", "featured")
             ]
     return sorted(found)
 
 
-def process_files(base_dir):
+def process_files(base_dir, destination_dir):
     """
     Process files in the specified directory.
     
     Args:
-        base_dir (Path): The base directory containing 'raw' subdirectory
+        base_dir (Path): The base directory containing Lightroom exports
+        destination_dir (Path): Directory where matching HIF files are copied
         
     Returns:
         bool: True if processing was successful, False otherwise
     """
+    base_dir = Path(base_dir)
+    destination_dir = Path(destination_dir).expanduser().resolve()
     raw_dir = base_dir / "raw"
-    featured_dir = base_dir / "featured"
     
     print(f"\n{'='*60}")
-    print(f"FEATURED FILES EXTRACTOR")
+    print(f"FINAL HIF COPIER")
     print(f"{'='*60}")
     print(f"Working directory: {base_dir}")
     
-    # Check if raw directory exists
-    if not raw_dir.exists():
-        print(f"\nError: 'raw' subdirectory does not exist in '{base_dir}'")
+    export_scan_dirs = _get_export_scan_directories(base_dir)
+    if not export_scan_dirs:
+        print(f"\nError: no Lightroom export directories found in '{base_dir}'")
         return False
 
     print(f"Raw directory: {raw_dir}")
-    print(f"Featured directory: {featured_dir}")
+    print(f"Destination directory: {destination_dir}")
 
-    # Step 1: Extract RAW file names (without extensions) from raw directory and subdirectories.
-    print(f"\n{'Step 1: Scanning raw directory (recursively all RAW files)':-<50}")
+    # Step 1: Extract selected file names from Lightroom export directories.
+    print(f"\n{'Step 1: Scanning Lightroom export directories':-<50}")
 
     try:
-        raw_file_names = _scan_raw_stems(raw_dir)
+        selected_file_names: set[str] = set()
+        for scan_dir in export_scan_dirs:
+            selected_file_names.update(_scan_export_stems(scan_dir))
     except PermissionError:
         print(f"Error: Permission denied accessing '{raw_dir}'")
         return False
     
-    if not raw_file_names:
-        print("   Warning: No valid files found in raw directory.")
+    if not selected_file_names:
+        print("   Warning: No valid Lightroom export files found.")
         return False
         
-    print(f"   📊 Total unique file names: {len(raw_file_names)}")
+    print(
+        "   Scanning export directories: "
+        + ", ".join(_display_search_dir(base_dir, directory) for directory in export_scan_dirs)
+    )
+    print(f"   📊 Total unique exported file names: {len(selected_file_names)}")
     
     # Step 2: Find all matching files in target directory and image subdirectories
     print(f"\n{'Step 2: Finding matching files':-<50}")
@@ -292,7 +319,7 @@ def process_files(base_dir):
                     # Skip system files
                     if file_stem.startswith('.'):
                         continue
-                    if file_stem in raw_file_names and file_path.suffix.lower() in FEATURED_EXTS:
+                    if file_stem in selected_file_names and file_path.suffix.lower() in FEATURED_EXTS:
                         if file_stem in matching_files_by_stem:
                             continue
                         real = file_path.resolve()
@@ -319,22 +346,16 @@ def process_files(base_dir):
         return False
         
     print(f"   📊 Total matching files: {len(matching_files)}")
-    missing_hif = sorted(raw_file_names - set(matching_files_by_stem))
+    missing_hif = sorted(selected_file_names - set(matching_files_by_stem))
     if missing_hif:
         print(f"   ⚠️  Missing matching HIF files: {', '.join(missing_hif)}")
     
-    # Step 3: Create featured directory and copy files
-    print(f"\n{'Step 3: Copying files to featured directory':-<50}")
+    # Step 3: Create destination directory and copy files
+    print(f"\n{'Step 3: Copying files to destination directory':-<50}")
     
     try:
-        # Create featured directory (if it doesn't exist)
-        featured_dir.mkdir(exist_ok=True)
-        print(f"   📁 Directory ready: {featured_dir}")
-        for existing in featured_dir.iterdir():
-            if existing.is_file():
-                existing.unlink()
-            elif existing.is_dir() and existing.name == "contact_sheets":
-                shutil.rmtree(existing)
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        print(f"   📁 Directory ready: {destination_dir}")
         
         # Copy files
         copied_count = 0
@@ -343,7 +364,7 @@ def process_files(base_dir):
         
         for file_path in matching_files:
             try:
-                destination = featured_dir / file_path.name
+                destination = destination_dir / file_path.name
                 # Check for duplicate filenames from different directories
                 if destination.exists():
                     print(f"   ⏭️  Skipped (already exists): {file_path.name}")
@@ -365,12 +386,12 @@ def process_files(base_dir):
             print(f"   ⏭️  Skipped (duplicates): {skipped_count} files")
         if failed_count > 0:
             print(f"   ❌ Failed to copy: {failed_count} files")
-        print(f"   📂 Destination: {featured_dir}")
+        print(f"   📂 Destination: {destination_dir}")
 
         return copied_count > 0
         
     except Exception as e:
-        print(f"Error creating featured directory: {e}")
+        print(f"Error creating destination directory: {e}")
         return False
 
 
@@ -378,7 +399,7 @@ def main():
     """Main function to orchestrate the file extraction process."""
     try:
         # Get target directory from user input or command line
-        base_dir, recursive = get_target_directory()
+        base_dir, recursive, destination_dir = get_target_directory()
         
         if recursive:
             bases = find_directories_with_raw(base_dir)
@@ -395,7 +416,7 @@ def main():
             overall_success = True
             for idx, b in enumerate(bases, 1):
                 print(f"\n--- [{idx}/{len(bases)}] {b} ---")
-                if not process_files(b):
+                if not process_files(b, destination_dir):
                     overall_success = False
             
             print(f"\n{'='*60}")
@@ -406,7 +427,7 @@ def main():
                 sys.exit(1)
         else:
             # Process files (original single-directory behavior)
-            success = process_files(base_dir)
+            success = process_files(base_dir, destination_dir)
             
             if success:
                 print(f"\n🎉 Operation completed successfully!")

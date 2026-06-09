@@ -24,6 +24,7 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("png").script_name, "png_to_jpg.py")
 
     def test_resolves_long_commands(self):
+        self.assertEqual(resolve_command("finalize").script_name, "finalize.py")
         self.assertEqual(resolve_command("featured").script_name, "extract_featured_raw.py")
         self.assertEqual(resolve_command("organize").script_name, "organize.py")
         self.assertEqual(resolve_command("fill-locations").script_name, "fill_missing_photo_locations.py")
@@ -34,6 +35,7 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("verify-cull").script_name, "verify_cull.py")
         self.assertEqual(resolve_command("raw-analyze").script_name, "raw_analyze.py")
         self.assertEqual(resolve_command("lr-plan").script_name, "lr_plan.py")
+        self.assertEqual(resolve_command("lr-apply").script_name, "lr_apply.py")
         self.assertEqual(resolve_command("rawpy-render").script_name, "rawpy_render.py")
         self.assertEqual(resolve_command("image-compress").script_name, "compress_images_under_size.py")
         self.assertEqual(resolve_command("png-to-jpg").script_name, "png_to_jpg.py")
@@ -213,6 +215,19 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIsNone(argv)
         self.assertIn("directory required", stderr.getvalue())
 
+    def test_finalize_value_options_do_not_count_as_directory(self):
+        command = resolve_command("finalize")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--scene", "flower-field", "--recursive"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
     def test_lr_plan_value_options_do_not_count_as_directory(self):
         command = resolve_command("lr-plan")
         stderr = StringIO()
@@ -220,6 +235,19 @@ class MediaToolkitCliTest(unittest.TestCase):
             argv = build_script_argv(
                 command,
                 ["--output", "/tmp/lr_plan.tsv", "--ratings", ">=3", "--style", "flower"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
+    def test_lr_apply_value_options_do_not_count_as_directory(self):
+        command = resolve_command("lr-apply")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--ratings", ">=3", "--style", "flower-rich"],
                 interactive=False,
             )
 
@@ -270,9 +298,19 @@ class MediaToolkitCliTest(unittest.TestCase):
 
     def test_does_not_add_current_directory_when_positional_is_present(self):
         command = resolve_command("f")
-        argv = build_script_argv(command, ["/tmp/event", "--recursive"])
+        argv = build_script_argv(
+            command,
+            ["/tmp/event", "--recursive"],
+        )
 
-        self.assertEqual(argv, ["extract_featured_raw.py", "/tmp/event", "--recursive"])
+        self.assertEqual(
+            argv,
+            [
+                "extract_featured_raw.py",
+                "/tmp/event",
+                "--recursive",
+            ],
+        )
 
     def test_does_not_add_current_directory_for_location_command(self):
         command = resolve_command("loc")
@@ -283,7 +321,7 @@ class MediaToolkitCliTest(unittest.TestCase):
     def test_command_table_prioritizes_clear_long_commands(self):
         table = command_table()
 
-        self.assertIn("mt featured", table)
+        self.assertIn("mt finalize", table)
         self.assertIn("mt organize", table)
         self.assertIn("mt fill-locations", table)
         self.assertIn("mt portrait-organize", table)
@@ -292,8 +330,10 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIn("mt verify-cull", table)
         self.assertIn("mt raw-analyze", table)
         self.assertIn("mt lr-plan", table)
+        self.assertIn("mt lr-apply", table)
         self.assertIn("mt rawpy-render", table)
         self.assertIsNone(re.search(r"^\s*mt f\s", table, re.MULTILINE))
+        self.assertIsNone(re.search(r"^\s*mt featured\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt o\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt loc\s", table, re.MULTILINE))
 
@@ -304,7 +344,8 @@ class MediaToolkitCliTest(unittest.TestCase):
 
         output = stdout.getvalue()
         self.assertEqual(exit_code, 0)
-        self.assertIn("mt featured", output)
+        self.assertIn("mt finalize", output)
+        self.assertIsNone(re.search(r"^\s*mt featured\s", output, re.MULTILINE))
         self.assertIn("mt organize", output)
         self.assertIsNone(re.search(r"^\s*mt f\s", output, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt o\s", output, re.MULTILINE))

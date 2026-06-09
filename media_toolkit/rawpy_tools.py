@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import math
 import re
 from dataclasses import dataclass
@@ -348,6 +349,275 @@ def write_lr_plan_tsv(output: Path, plans: list[LrPlan], *, root: Path) -> None:
                     "rationale": item.rationale,
                 }
             )
+
+
+def _format_signed_int(value: int) -> str:
+    if value > 0:
+        return f"+{value}"
+    return str(value)
+
+
+def _format_signed_float(value: float) -> str:
+    if value > 0:
+        return f"+{value:.2f}"
+    return f"{value:.2f}"
+
+
+LR_STYLE_PROFILES: dict[str, dict[str, str]] = {
+    "travel-rich": {
+        "CameraProfile": "Camera ST",
+        "WhiteBalance": "Custom",
+        "Temperature": "5350",
+        "Tint": "+12",
+        "Texture": "+6",
+        "Clarity2012": "+3",
+        "Dehaze": "+2",
+        "Vibrance": "+2",
+        "Saturation": "0",
+        "ParametricHighlights": "+4",
+        "ParametricLights": "+6",
+        "ParametricDarks": "-4",
+        "ParametricShadows": "-2",
+        "ToneCurveName2012": "Custom",
+        "ToneCurvePV2012": "0, 0, 66, 59, 125, 125, 182, 188, 255, 255",
+        "ToneCurvePV2012Red": "0, 0, 255, 255",
+        "ToneCurvePV2012Green": "0, 0, 255, 255",
+        "ToneCurvePV2012Blue": "0, 0, 255, 255",
+        "SaturationAdjustmentYellow": "-1",
+        "SaturationAdjustmentGreen": "-2",
+        "SaturationAdjustmentAqua": "-2",
+        "SaturationAdjustmentBlue": "-3",
+        "LuminanceAdjustmentYellow": "+2",
+        "LuminanceAdjustmentGreen": "+3",
+        "LuminanceAdjustmentBlue": "-1",
+        "RedHue": "0",
+        "RedSaturation": "+6",
+        "GreenHue": "0",
+        "GreenSaturation": "+7",
+        "BlueHue": "0",
+        "BlueSaturation": "+6",
+        "ColorGradeMidtoneHue": "0",
+        "ColorGradeMidtoneSat": "0",
+        "ColorGradeBlending": "50",
+        "PostCropVignetteAmount": "-2",
+    },
+    "flower-rich": {
+        "CameraProfile": "Camera ST",
+        "WhiteBalance": "Custom",
+        "Temperature": "5450",
+        "Tint": "+11",
+        "Texture": "+6",
+        "Clarity2012": "+4",
+        "Dehaze": "+2",
+        "Vibrance": "+2",
+        "Saturation": "0",
+        "ParametricHighlights": "+4",
+        "ParametricLights": "+6",
+        "ParametricDarks": "-4",
+        "ParametricShadows": "-2",
+        "ToneCurveName2012": "Custom",
+        "ToneCurvePV2012": "2, 5, 68, 55, 125, 124, 186, 193, 255, 250",
+        "ToneCurvePV2012Red": "0, 0, 255, 255",
+        "ToneCurvePV2012Green": "0, 0, 255, 255",
+        "ToneCurvePV2012Blue": "0, 0, 255, 255",
+        "HueAdjustmentRed": "0",
+        "HueAdjustmentOrange": "0",
+        "HueAdjustmentYellow": "0",
+        "HueAdjustmentGreen": "0",
+        "HueAdjustmentAqua": "0",
+        "HueAdjustmentBlue": "0",
+        "HueAdjustmentPurple": "0",
+        "HueAdjustmentMagenta": "0",
+        "SaturationAdjustmentRed": "0",
+        "SaturationAdjustmentOrange": "0",
+        "SaturationAdjustmentYellow": "-2",
+        "SaturationAdjustmentGreen": "-3",
+        "SaturationAdjustmentAqua": "-3",
+        "SaturationAdjustmentBlue": "-4",
+        "SaturationAdjustmentPurple": "0",
+        "SaturationAdjustmentMagenta": "0",
+        "LuminanceAdjustmentRed": "0",
+        "LuminanceAdjustmentOrange": "0",
+        "LuminanceAdjustmentYellow": "+2",
+        "LuminanceAdjustmentGreen": "+3",
+        "LuminanceAdjustmentAqua": "0",
+        "LuminanceAdjustmentBlue": "-1",
+        "RedHue": "0",
+        "RedSaturation": "+10",
+        "GreenHue": "0",
+        "GreenSaturation": "+12",
+        "BlueHue": "0",
+        "BlueSaturation": "+11",
+        "ColorGradeMidtoneHue": "0",
+        "ColorGradeMidtoneSat": "0",
+        "ColorGradeBlending": "50",
+        "PostCropVignetteAmount": "-5",
+    },
+    "sairim-lake-east": {
+        "CameraProfile": "Camera ST",
+        "WhiteBalance": "Custom",
+        "Temperature": "5250",
+        "Tint": "+14",
+        "Texture": "+6",
+        "Clarity2012": "+4",
+        "Dehaze": "+2",
+        "Vibrance": "+2",
+        "Saturation": "0",
+        "ParametricHighlights": "+4",
+        "ParametricLights": "+6",
+        "ParametricDarks": "-4",
+        "ParametricShadows": "-2",
+        "ToneCurveName2012": "Custom",
+        "ToneCurvePV2012": "2, 5, 65, 62, 125, 124, 186, 193, 255, 250",
+        "ToneCurvePV2012Red": "0, 0, 255, 255",
+        "ToneCurvePV2012Green": "0, 0, 255, 255",
+        "ToneCurvePV2012Blue": "0, 0, 255, 255",
+        "SaturationAdjustmentYellow": "-2",
+        "SaturationAdjustmentGreen": "-3",
+        "SaturationAdjustmentAqua": "-3",
+        "SaturationAdjustmentBlue": "-4",
+        "LuminanceAdjustmentYellow": "+2",
+        "LuminanceAdjustmentGreen": "+3",
+        "LuminanceAdjustmentBlue": "-1",
+        "RedHue": "0",
+        "RedSaturation": "+4",
+        "GreenHue": "0",
+        "GreenSaturation": "+2",
+        "BlueHue": "0",
+        "BlueSaturation": "+6",
+        "ColorGradeMidtoneHue": "0",
+        "ColorGradeMidtoneSat": "0",
+        "ColorGradeBlending": "50",
+        "PostCropVignetteAmount": "-5",
+    },
+    "bayanbulak-nine-bends": {
+        "CameraProfile": "Adobe Standard",
+        "WhiteBalance": "Custom",
+        "Temperature": "5250",
+        "Tint": "+14",
+        "Texture": "+6",
+        "Clarity2012": "+4",
+        "Dehaze": "+6",
+        "Vibrance": "+2",
+        "Saturation": "0",
+        "ParametricHighlights": "0",
+        "ParametricLights": "0",
+        "ParametricDarks": "0",
+        "ParametricShadows": "0",
+        "ToneCurveName2012": "Custom",
+        "ToneCurvePV2012": "0, 0, 66, 59, 125, 125, 182, 188, 255, 255",
+        "ToneCurvePV2012Red": "0, 0, 255, 255",
+        "ToneCurvePV2012Green": "0, 0, 255, 255",
+        "ToneCurvePV2012Blue": "0, 0, 255, 255",
+        "SaturationAdjustmentYellow": "+17",
+        "SaturationAdjustmentGreen": "-3",
+        "SaturationAdjustmentAqua": "-3",
+        "SaturationAdjustmentBlue": "-4",
+        "LuminanceAdjustmentYellow": "+2",
+        "LuminanceAdjustmentGreen": "+3",
+        "LuminanceAdjustmentBlue": "-1",
+        "RedHue": "0",
+        "RedSaturation": "+4",
+        "GreenHue": "0",
+        "GreenSaturation": "+14",
+        "BlueHue": "0",
+        "BlueSaturation": "+7",
+        "ColorGradeMidtoneHue": "0",
+        "ColorGradeMidtoneSat": "0",
+        "ColorGradeBlending": "50",
+        "PostCropVignetteAmount": "-5",
+    },
+}
+
+
+TONE_CURVE_FIELDS = {
+    "ToneCurvePV2012",
+    "ToneCurvePV2012Red",
+    "ToneCurvePV2012Green",
+    "ToneCurvePV2012Blue",
+}
+
+
+def build_lr_xmp_fields(plan: LrPlan, *, style: str = "travel-rich") -> dict[str, str]:
+    try:
+        fields = dict(LR_STYLE_PROFILES[style])
+    except KeyError as exc:
+        raise ValueError(f"unknown LR XMP style: {style}") from exc
+
+    fields.update(
+        {
+            "Exposure2012": _format_signed_float(plan.exposure2012),
+            "Highlights2012": _format_signed_int(plan.highlights2012),
+            "Shadows2012": _format_signed_int(plan.shadows2012),
+            "Whites2012": _format_signed_int(plan.whites2012),
+            "Blacks2012": _format_signed_int(plan.blacks2012),
+            "Contrast2012": _format_signed_int(plan.contrast2012),
+            "LensProfileEnable": "1",
+            "LensProfileSetup": "Auto",
+            "LensProfileDistortionScale": "100",
+            "LensProfileVignettingScale": "100",
+            "AutoLateralCA": "1",
+            "PerspectiveUpright": "0",
+            "Sharpness": "40",
+            "LuminanceSmoothing": "0",
+            "ColorNoiseReduction": "25",
+            "HasSettings": "True",
+            "AlreadyApplied": "False",
+        }
+    )
+    return fields
+
+
+def write_lr_xmp_sidecar(raw_file: Path, fields: dict[str, str], *, rating: int | None) -> None:
+    raw_file = Path(raw_file)
+    output = raw_file.with_suffix(".xmp")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    rating_value = "" if rating is None else f' xmp:Rating="{rating}"'
+    crs_attrs = "\n".join(
+        f'   crs:{html.escape(key)}="{html.escape(value, quote=True)}"'
+        for key, value in fields.items()
+        if key not in TONE_CURVE_FIELDS
+    )
+    curve_blocks = "\n".join(
+        _tone_curve_block(key, value)
+        for key, value in fields.items()
+        if key in TONE_CURVE_FIELDS
+    )
+    text = f'''<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+   xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+   xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/"{rating_value}
+{crs_attrs}
+   photoshop:SidecarForExtension="{html.escape(raw_file.suffix.lstrip('.').upper(), quote=True)}"
+   dc:format="image/x-sony-arw"
+   xmpMM:PreservedFileName="{html.escape(raw_file.name, quote=True)}">
+{curve_blocks}
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+'''
+    output.write_text(text, encoding="utf-8")
+
+
+def _tone_curve_block(key: str, value: str) -> str:
+    numbers = [item.strip() for item in value.split(",")]
+    pairs = [
+        ", ".join(numbers[index : index + 2])
+        for index in range(0, len(numbers), 2)
+        if len(numbers[index : index + 2]) == 2
+    ]
+    items = "\n".join(f"     <rdf:li>{html.escape(pair)}</rdf:li>" for pair in pairs)
+    return f"""   <crs:{html.escape(key)}>
+    <rdf:Seq>
+{items}
+    </rdf:Seq>
+   </crs:{html.escape(key)}>"""
 
 
 def read_xmp_rating(path: Path) -> int | None:

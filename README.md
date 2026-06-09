@@ -14,13 +14,13 @@ After that, run `mt` from any directory:
 
 ```bash
 mt
-mt featured /path/to/photos
-mt featured
+mt finalize /path/to/photos --scene flower-field
 mt organize /path/to/import --dry-run
 mt organize
 mt fill-locations --describe
 mt contact-sheet /path/to/photos --export-only
 mt raw-analyze /path/to/photos --ratings ">=3"
+mt lr-apply /path/to/photos --ratings ">=3" --style flower-rich
 mt rawpy-render /path/to/photos --ratings ">=3"
 mt image-compress /path/to/photos --max-bytes 1048576
 ```
@@ -142,20 +142,49 @@ scripts, and agent instructions.
 
 | Command | Meaning | Default path behavior |
 | --- | --- | --- |
-| `mt featured` | Copy original HIF previews whose names match RAW items into `featured/`. | Uses current directory when no path is passed. |
+| `mt finalize` | Copy matching original HIF previews into the photo directory's `featured/` folder after manual refinement. | Uses current directory when no path is passed. |
 | `mt organize` | Move camera media into type folders such as `raw/` and `hif/`. | Uses current directory when no path is passed. |
 | `mt fill-locations` | Plan or apply missing Apple Photos geolocation fixes. | Works on Apple Photos, not the current directory. |
 | `mt contact-sheet` | Generate contact sheet images and `manifest.tsv`. | Uses current directory when no path is passed. |
 | `mt raw-analyze` | Write RAW histogram and clipping metrics for culling evidence. | Uses current directory when no path is passed. |
 | `mt lr-plan` | Suggest Lightroom exposure sliders from RAW histogram evidence. | Uses current directory when no path is passed. |
+| `mt lr-apply` | Write Lightroom rough-edit XMP fields from RAW evidence and scene style profiles. | Uses current directory when no path is passed. |
 | `mt rawpy-render` | Render RAW-derived JPEG inputs for selected candidates. | Uses current directory when no path is passed. |
 | `mt image-compress` | Compress oversized JPG/JPEG files under a byte cap. | Uses current directory when no path is passed. |
 | `mt drone` | Compress drone `.mp4` video with the DJI-oriented preset. | Uses current directory when no path is passed. |
 | `mt png-to-jpg` | Convert `.png` images to `.jpg`. | Uses current directory when no path is passed. |
 
 Compatibility aliases still work for interactive use, but they are intentionally
-not the documented interface: `mt f`, `mt o`, `mt loc`, `mt sheet`, `mt imgzip`,
-and `mt png`.
+not the recommended interface: `mt featured`, `mt f`, `mt o`, `mt loc`,
+`mt sheet`, `mt imgzip`, and `mt png`.
+
+## Two Photo Workflows
+
+Use two user-facing workflows for photo sets:
+
+1. Initial cull (`初筛`): organize RAW/HIF media, separate portraits and
+   panoramas, rate every RAW, write review contact sheets, and optionally write
+   LR rough edits for Lightroom refinement.
+2. Finalize (`成片归档`): after manual Lightroom refinement, copy matching
+   original HIF previews for Lightroom-exported final picks to each photo
+   directory's `featured/` folder.
+
+Run finalization with a scene label so the output is traceable and any useful
+manual refinement learning can be folded back into repository profiles/docs:
+
+```bash
+mt finalize /path/to/photos --scene flower-field
+mt finalize /path/to/photos --scene grassland
+mt finalize /path/to/photos --scene overcast-travel
+```
+
+The command uses Lightroom exports as the authoritative final pick list:
+filenames in `raw/Export/` and `portrait/<n>/raw/Export/` define the stems to
+archive. It copies the matching original HIF previews into the photo directory's
+`featured/` folder. It does not copy the Lightroom export files themselves,
+and it does not write local style learning reports into photo directories.
+Lightroom-generated panorama DNG files such as `*-Pano.dng` are expected not to
+have matching HIF previews.
 
 ### RAW Analysis And Rendering
 
@@ -164,14 +193,19 @@ mt raw-analyze /path/to/photos
 mt raw-analyze /path/to/photos --ratings ">=3"
 mt lr-plan /path/to/photos --ratings ">=3"
 mt lr-plan /path/to/photos --ratings ">=3" --style flower
+mt lr-apply /path/to/photos --ratings ">=3" --style travel-rich
+mt lr-apply /path/to/photos --ratings ">=3" --style flower-rich
+mt lr-apply /path/to/photos --ratings ">=3" --style sairim-lake-east
+mt lr-apply /path/to/photos --ratings ">=3" --style bayanbulak-nine-bends
 mt rawpy-render /path/to/photos --ratings ">=3"
 ```
 
-`mt raw-analyze` reads RAW files through rawpy/LibRaw and writes `raw_stats.tsv`
-with linear RAW histogram evidence: black/white levels, percentile brightness,
+`mt raw-analyze` reads RAW files through rawpy/LibRaw and writes a temporary
+`raw_stats.tsv` with linear RAW histogram evidence: black/white levels, percentile brightness,
 clipping ratios, shadow ratios, per-channel clipping, and white-balance metadata.
 Use it as exposure evidence for culling and LR rough edits; it does not replace
-HIF visual review, contact sheets, or human rating judgment.
+HIF visual review, contact sheets, or human rating judgment. Delete
+`raw_stats.tsv` after XMP sidecars have been written and verified.
 
 `mt lr-plan` turns RAW histogram evidence into an auditable Lightroom plan for
 `Exposure2012`, `Highlights2012`, `Shadows2012`, `Whites2012`, `Blacks2012`,
@@ -181,7 +215,22 @@ and black point recovery from RAW clipping and shadow-risk signals. Use
 `--style flower` for lavender or flower-field travel scenes where the desired
 LR direction is softer contrast, stronger high-light protection, and airier
 foreground shadows. The command writes `lr_plan.tsv`; it does not edit XMP by
-itself.
+itself. Delete `lr_plan.tsv` after XMP sidecars have been written and verified.
+
+`mt lr-apply` writes Lightroom/Camera Raw rough-edit fields into lowercase
+`.xmp` sidecars for rated candidates. It combines the same RAW histogram
+evidence used by `mt lr-plan` with a scene style profile. Use `--style
+travel-rich` for the richer general travel landscape baseline. Use `--style
+flower-rich` for lavender or flower-field travel scenes that should follow the
+user's `1.xmp` direction: `Camera ST`, custom white balance around `5450/+11`,
+strong highlight protection, large shadow recovery, soft contrast, the
+flower-field point curve, controlled blue/green HSL, calibration color energy,
+and subtle `PostCropVignetteAmount=-5`. Automatic Upright stays off in
+agent-written rough edits. Learned scene profiles are also available for
+recurring Xinjiang directions: `--style sairim-lake-east` uses a more restrained
+lake/open-travel calibration, while `--style bayanbulak-nine-bends` uses the
+stronger contrast, dehaze, green/yellow color direction learned from the
+nine-bends refinement.
 
 `mt rawpy-render` creates RAW-derived JPEG inputs for downstream AI work. By
 default it renders `>=3` star RAW files from their lowercase `.xmp` ratings and
@@ -260,21 +309,25 @@ positions back to source files.
   `_contact_sheet.jpg`, `portrait/_contact_sheet.jpg`, and
   `panorama/_contact_sheet.jpg`
 
-### Featured Extraction
+### Finalize / 成片归档
 
 ```bash
-mt featured /path/to/photos
-mt featured
+mt finalize /path/to/photos --scene flower-field
 ```
 
-Runs after refinement when `raw/` contains the selected RAW files whose original
-HIF previews should be collected.
+Runs after refinement when `raw/Export/` contains Lightroom exports for the
+final selected photos whose original HIF previews should be collected.
 
-- RAW filenames in `raw/` define the selected stems
-- matching original HIF previews are copied from `hif/`, `portrait/<n>/hif/`,
-  and `panorama/<n>/hif/`
-- Lightroom exports under `raw/Export/` are not copied by this command
-- missing HIF files are reported clearly
+- Lightroom export filenames in `raw/Export/` define selected root stems
+- Lightroom export filenames in `portrait/<n>/raw/Export/` define selected
+  portrait stems
+- matching original HIF previews are copied from `hif/` and
+  `portrait/<n>/hif/` to the photo directory's `featured/` folder
+- panorama source-frame previews under `panorama/<n>/hif/` are not copied into
+  the destination directory
+- Lightroom export files themselves are not copied by this command
+- Lightroom-generated `*-Pano.dng` panorama derivatives do not need matching HIF
+- missing HIF files for camera RAW stems are reported clearly
 
 ### Media File Organization
 

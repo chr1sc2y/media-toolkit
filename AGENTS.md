@@ -11,12 +11,13 @@ instructions should prefer `mt`.
 
 | Clear command | Purpose |
 | --- | --- |
-| `mt featured` | Copy matching original HIF previews into `featured/` based on stems found in `raw/`. |
+| `mt finalize` | Copy matching original HIF previews into the photo directory's `featured/` folder after manual refinement. |
 | `mt organize` | Move camera media into per-directory type folders such as `raw/` and `hif/`. |
 | `mt fill-locations` | Plan or apply missing Apple Photos location fixes. |
 | `mt contact-sheet` | Generate contact sheets and a manifest. |
 | `mt raw-analyze` | Write RAW histogram and clipping metrics for culling evidence. |
 | `mt lr-plan` | Suggest Lightroom exposure sliders from RAW histogram evidence. |
+| `mt lr-apply` | Write Lightroom rough-edit XMP fields from RAW evidence and scene style profiles. |
 | `mt rawpy-render` | Render RAW-derived JPEG inputs for selected candidates. |
 | `mt image-compress` | Compress oversized JPG/JPEG files under a maximum byte size. |
 | `mt drone` | Compress drone videos with the existing preset. |
@@ -26,7 +27,7 @@ Directory-based commands default to the current directory when no path is
 provided. `mt fill-locations` operates on Apple Photos and does not use the
 current directory as a media input.
 
-Short aliases such as `mt f`, `mt o`, and `mt loc` exist only as compatibility
+Compatibility commands and short aliases such as `mt featured`, `mt f`, `mt o`, and `mt loc` exist only as compatibility
 shortcuts. Do not use them in documentation or generated instructions unless the
 user explicitly asks for aliases.
 
@@ -61,15 +62,15 @@ Lightroom-readable sidecar markers such as
 `photoshop:SidecarForExtension=ARW`, `dc:format=image/x-sony-arw`, and
 `xmpMM:PreservedFileName`.
 
-Initial cull stops after organization, grouping, ratings, and review contact
-sheets. Lightroom/Camera Raw rough edit parameters belong to the LR branch, not
-the initial cull. If the user asks only for initial cull, selection, or
-organization and does not explicitly choose LR, AI, or both downstream branches,
-stop after the initial-cull deliverables and ask which branch to run next; do
-not silently choose a branch or imply that a branch was completed. Do not
-blindly apply one fixed preset in the LR branch: tune exposure, contrast, tone
-curve, color calibration, noise reduction, and lens-specific sharpening from
-ISO, shutter, aperture, lens, RAW histogram evidence, and visual review.
+Initial cull completes organization, grouping, ratings, and review contact
+sheets before any downstream edit work. If the user does not explicitly choose
+AI, both branches, or "initial-cull only", continue by default into the LR
+branch and write Lightroom/Camera Raw rough edit XMP parameters for `>=3` star
+RAW files. Stop after initial-cull deliverables only when the user explicitly
+asks to organize/rate/select without LR rough edits. Do not blindly apply one
+fixed preset in the LR branch: tune exposure, contrast, tone curve, color
+calibration, noise reduction, and lens-specific sharpening from ISO, shutter,
+aperture, lens, RAW histogram evidence, and visual review.
 Do not apply automatic Upright/Level by default; inspect previews and use small
 manual `PerspectiveRotate` corrections only when needed.
 Use `Camera PT` for Sony portraits when available; use gentler portrait settings
@@ -83,7 +84,13 @@ candidates; `mt raw-analyze --ratings ">=3"` may be used to write
 review. For the LR branch, run `mt lr-plan --ratings ">=3"` after ratings are
 written; it converts RAW histogram evidence into auditable Lightroom slider
 suggestions for `Exposure2012`, `Highlights2012`, `Shadows2012`, `Whites2012`,
-`Blacks2012`, and `Contrast2012`. Use HIF only as a visual aid. Do not use Lightroom
+`Blacks2012`, and `Contrast2012`. Use `mt lr-apply --ratings ">=3"` to write
+agent rough-edit sidecars from those RAW evidence rules plus a scene style
+profile. Use `--style flower-rich` for lavender/flower-field travel scenes
+that should follow the user's `1.xmp` direction, and `--style travel-rich` for
+the richer general travel landscape baseline. Do not keep `lr_plan.tsv` or
+`raw_stats.tsv` in the final photo directory state; remove those temporary
+evidence files after XMP sidecars have been written and verified. Use HIF only as a visual aid. Do not use Lightroom
 `raw/Export/*.jpg` exports for portrait detection, panorama detection, culling
 review, or final contact sheets. If a portrait RAW is moved, move its corresponding
 `raw/Export/*.jpg` along with the RAW as an associated export only. Keep
@@ -113,18 +120,29 @@ branches operate on all `>=3` star files:
 
 - LR branch: write Lightroom/Camera Raw rough-edit XMP parameters for each
   `>=3` star RAW, using `mt lr-plan` output as the exposure/highlight/shadow
-  evidence layer before writing or reviewing XMP. Then the user can read
-  metadata in Lightroom Classic and continue manual refinement/export.
+  evidence layer and `mt lr-apply` to write the chosen scene style profile.
+  Then the user can read metadata in Lightroom Classic and continue manual
+  refinement/export.
 - AI branch: generate AI-edited output for each `>=3` star candidate without
   overwriting RAW, HIF, or XMP files. Store ordinary outputs in `codex/` beside
   the root `raw/` and `hif/`; store portrait outputs in
   `portrait/<n>/codex/`; store panorama outputs in `panorama/<n>/codex/`.
 
-After Lightroom manual refinement, use `mt featured` to collect the original HIF
-previews corresponding to the remaining selected RAW stems. This step copies
-only matching HIF files from `hif/`, `portrait/<n>/hif/`, or
-`panorama/<n>/hif/`; it does not copy Lightroom exports from `raw/Export/` and
-does not generate a featured contact sheet by default.
+After Lightroom manual refinement, use `mt finalize` for the final
+"成片归档" workflow. This step uses Lightroom exports as the authoritative final
+selection list: filenames in root `raw/Export/` and
+`portrait/<n>/raw/Export/` define the stems to archive. It copies the matching
+original HIF previews into the photo directory's `featured/` folder. It copies only matching HIF
+files from `hif/` or `portrait/<n>/hif/`; it does not copy panorama source-frame
+HIF files from `panorama/<n>/hif/`, does not copy the Lightroom export files
+themselves, and does not generate a contact sheet by default. Use `--scene` to
+name the scenery class for reporting and future repo-level style tuning, for
+example `mt finalize <photo-dir> --scene flower-field`.
+Do not write per-photo-directory style learning reports; fold user refinement
+learning back into repository profiles, preset notes, prompts, and memory.
+Lightroom-generated panorama DNG files such as `*-Pano.dng` are final panorama
+derivatives and normally do not have matching HIF previews; do not report their
+missing HIF as a problem.
 
 The AI branch must use RAW-derived input images, not camera-rendered HIF or
 Lightroom export JPGs, as the editable base. Render each selected RAW through
@@ -207,6 +225,33 @@ subtle `PostCropVignetteAmount=-5`. Treat this as a flower-field travel-scene
 direction, not a universal landscape default. Keep automatic Upright off for
 agent-written rough edits unless the user explicitly asks for it or has manually
 confirmed it per image.
+
+User tone-curve preference: use a gentle S-shaped point curve when it helps the
+image, with protected endpoints rather than crushed blacks or clipped whites.
+Lightly lift or preserve the black point, roll the white point down when needed,
+slightly deepen lower-mids, and slightly lift upper-mids. This should add modest
+contrast while preserving highlight and shadow texture. Keep the exact curve
+scene-specific; do not force one numeric curve onto every landscape, portrait,
+night, snow, or high-contrast scene.
+
+Long-term style learning is part of the finalization workflow, not a third
+separate user-facing workflow. The two user-facing workflows are:
+
+1. Initial cull (`初筛`): organize, group, rate, write review sheets, and
+   by default write LR rough edits for Lightroom refinement unless the user
+   explicitly asks for initial-cull only.
+2. Finalize (`成片归档`): after the user manually refines photos in Lightroom,
+   export the final picks from Lightroom, then copy matching original HIF
+   previews to the photo directory's `featured/` folder. The final pick list comes from
+   `raw/Export/` and `portrait/<n>/raw/Export/`, not from every remaining RAW.
+   When manual XMP refinements teach a new scene direction, update repository
+   profiles/docs directly instead of writing a local learning report into the
+   photo directory.
+
+Do not collapse the user's style into one universal preset; maintain separate
+learned directions for flower fields, grasslands, overcast travel landscapes,
+portraits, panoramas, snow/mountain scenes, night/city work, and any other
+recurring scenery class that emerges from manual refinements.
 
 Legacy portrait paths such as `人像/1/` and `人像/_contact_sheet.jpg` are
 obsolete. Use `portrait/` for all new work, even when the user writes in

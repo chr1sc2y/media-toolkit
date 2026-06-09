@@ -6,7 +6,7 @@ and optional sibling preview folders such as `hif/`, `jpg/`, or `jpeg/`.
 ## User Prompt
 
 ```text
-请对指定照片目录执行 RAW 初筛、全量评级，并准备后续 LR / AI 两个成片分支。
+请对指定照片目录执行 RAW 初筛、全量评级，并准备后续 Lightroom 手工精修。
 
 照片目录：
 <PASTE_PHOTO_DIRECTORY_HERE>
@@ -16,8 +16,8 @@ and optional sibling preview folders such as `hif/`, `jpg/`, or `jpeg/`.
 - 初筛阶段处理照片目录下所有 RAW 文件，包括普通照片、portrait/ 分组和 panorama/ 分组里的 RAW。
 - 不修改 RAW 本体，不删除文件。
 - 将 Lightroom / Camera Raw 可读取的评级结果写入同名 .xmp sidecar。
-- 初筛阶段只负责 organize、分组、评级和复核接触表；不要写 Lightroom 粗修参数。
-- 如果用户只要求初筛、整理、选图或评星，并没有明确指定继续走 LR 分支、AI 分支或两者都走，初筛完成后必须先询问用户下一步选择；不要默认进入某个分支，也不要暗示 LR/AI 已经完成。
+- 初筛阶段先负责 organize、分组、评级和复核接触表；如果用户没有明确指定 AI 分支、LR+AI 两者都走，或明确要求“只初筛/不粗修”，初筛完成后默认继续走 LR 分支，也就是给 >=3 星 RAW 写入 Lightroom 粗修 XMP 参数。
+- 只有用户明确要求只做初筛、只整理、只选图、只评星或不要粗修时，才停在组织、评级和接触表，不进入 LR 或 AI 分支。
 - 不写 XMP Label/标签字段；星级 rating 是唯一稳定筛选信号。
 - 使用 hif/ 下的 HIF 预览作为识别、分组、构图/清晰度判断和 Contact Sheet 的视觉来源；不要使用 Lightroom 导出的 raw/Export/*.jpg 做人像识别、全景识别、筛选复核或最终 Contact Sheet。
 - HIF 是相机已经渲染过的成品预览，不能作为 RAW 最终曝光和调色的唯一依据。曝光统一优先用 rawpy/LibRaw 直接读取 RAW 线性数据和直方图；HIF 只作为视觉辅助。
@@ -37,7 +37,7 @@ and optional sibling preview folders such as `hif/`, `jpg/`, or `jpeg/`.
 - 3星：备选图，也进入最终精修候选，但优先级低于 4/5 星。
 - 2星：普通记录、重复图、弱构图。
 - 1星或0星：明显失败图。
-- LR 分支和 AI 分支都处理所有 >=3星 的照片。
+- LR 粗修和 AI 分支都处理所有 >=3星 的照片。
 
 筛选标准：
 - 优先选择构图完整、主体明确、光线好、层次好、细节清楚的照片。
@@ -57,14 +57,16 @@ LR 分支：
 - 可参考 https://photography.prov1dence.top/ 的既有方向：干净、克制、真实氛围优先，避免过度 HDR、过度橙青、过亮阴影或过饱和草地/天空。
 - 对于大场景风光，优先保留空气透视、云层压迫感、河流线条和地貌层次，不要把阴天硬修成晴天感。
 - 根据 RAW 元数据和 RAW 直方图判断曝光：参考 ISO、快门、光圈、曝光补偿，并优先用 rawpy/LibRaw 读取 RAW 线性亮度分布，让同一批图的整体亮度尽量一致。这里的统一指最终观感统一，不是所有照片写死同一个 Exposure；如果同批照片因为测光、设置或主体亮度不同导致有的过曝、有的欠曝，需要逐张识别并分别调整 Exposure2012、Highlights2012、Shadows2012、Whites2012、Blacks2012，让它们回到统一的亮度和对比基准。
-- 执行 LR 分支时，优先先运行 `mt lr-plan <照片目录> --ratings ">=3"` 生成 `lr_plan.tsv`；薰衣草、花田、明亮大场景可用 `--style flower`。写入或复核 XMP 时，以 `lr_plan.tsv` 的 `Exposure2012`、`Highlights2012`、`Shadows2012`、`Whites2012`、`Blacks2012`、`Contrast2012` 作为 RAW 证据层，再结合 HIF 视觉和题材风格微调。不要跳过 RAW 证据直接凭 HIF 亮度批量写死同一组曝光/高光/阴影参数。
+- 执行 LR 分支时，可运行 `mt lr-plan <照片目录> --ratings ">=3"` 生成临时曝光计划；薰衣草、花田、明亮大场景可用 `--style flower`。随后用 `mt lr-apply <照片目录> --ratings ">=3" --style travel-rich` 或 `--style flower-rich` 写入粗修 XMP。`mt lr-apply` 会把 RAW 证据层的 `Exposure2012`、`Highlights2012`、`Shadows2012`、`Whites2012`、`Blacks2012`、`Contrast2012` 和场景风格骨架合并写入 sidecar；必要时再结合 HIF 视觉和题材风格微调。不要跳过 RAW 证据直接凭 HIF 亮度批量写死同一组曝光/高光/阴影参数。写完并验证 XMP 后，删除 `lr_plan.tsv` 和 `raw_stats.tsv`，不要把它们留在照片目录最终状态里。
 - 同一批、同一场景/天气下的最终候选图必须保持修图骨架统一：Camera Profile、白平衡基准、高光/阴影策略、Tone Curve、Camera Calibration 范围、HSL/Mixer 上限、暗角策略、锐化策略、镜头校正和 Upright 策略都应一致。只有光线、主体或题材真实变化时才允许单张偏离，并在输出说明里点明。统一修图骨架不等于统一每个滑块数值；曝光/高光/阴影/黑白场要根据 RAW 直方图和 Lightroom 视觉复核逐张校准。
 - 保护高光，恢复阴影细节，但不要把阴影抬到发灰；保留自然黑位。
 - 增加层次主要依靠 Exposure/Highlights/Shadows/Whites/Blacks、轻微 Tone Curve、局部 Texture/Clarity/Dehaze，而不是直接堆 Saturation/Vibrance。
+- 用户的点曲线习惯：优先使用轻微 S 形点曲线来防止死黑和纯白，同时略微增加对比度。黑位可以轻轻抬起或至少避免压死，白位可在高光风险时轻轻压回；下中间调略压、上中间调略提。这个原则合理但应保持克制，按场景微调，不要把某一条具体曲线强行套到所有照片。
 - 默认降低鲜艳度和饱和度权重：Vibrance 只做很小幅度调整，Saturation 默认 0 或接近 0；颜色倾向优先通过 Camera Calibration 三原色 Hue/Saturation 做温和微调。
 - 哈苏方向的调色目标：更克制的饱和度、更顺滑的高光 roll-off、更厚一点的中间调、更干净的蓝绿分离；不要把它理解成简单加饱和或套滤镜。
 - 可以低强度吸收用户 `Sony ST.xmp` 预设的优点：更积极保护高光、保留 Texture 质感、全局 Saturation/Vibrance 保持低值、通过 Camera Calibration 而不是 HSL 饱和度给颜色骨架，并参考它轻微的点曲线 `ToneCurvePV2012=0,0 / 66,59 / 125,125 / 182,188 / 255,255`。但必须限制力度：Highlights2012 通常在 -55 到 -70；Shadows2012 通常 10 到 24；Dehaze 通常 1 到 4；RedSaturation 2 到 4，GreenSaturation 1 到 3，BlueSaturation 0 到 2。不要继承 `PerspectiveUpright=Auto`、`Shadows2012=42`、`Dehaze=8` 或三原色饱和 +11/+12/+12 这种强度。
 - 2026-06-09 薰衣草精修反馈：对阳光花田/薰衣草田这类大场景，用户最终风格比 Codex 初稿更亮、更柔、更有颜色骨架。可把高光保护提高到 `Highlights2012=-78..-90`，阴影提高到 `Shadows2012=50..85`，使用负对比 `Contrast2012=-8..-18` 和点曲线 `ToneCurvePV2012=2,5 / 68,55 / 125,124 / 186,193 / 255,250`；三原色校准可在视觉确认后提高到 `RedSaturation=7..10`、`GreenSaturation=9..12`、`BlueSaturation=8..11`，同时保持 `Saturation=0`、`Vibrance=2`，并用 `Blue Saturation=-4..-8` 控制天空。不要把这个强度套到普通阴天草原、人像、雪山、夜景或已经过饱和的场景。
+- 长期风格学习是默认工作方式：通常由 agent 做初筛和默认 LR 粗修，用户在 Lightroom 里继续手工精修，之后 agent 对比用户精修后的 `.xmp` 和自己写入的粗修骨架，更新分场景学习方案。不要把用户风格压成一个固定预设；按花田/薰衣草、草原、阴天旅行风光、人像、全景、雪山/高反差山景、夜景/城市等类别逐步维护不同方向。
 - 批量粗修阶段的混色器/HSL 只做微调，用来压住草地、水面、天空的过饱和或偏色，不作为主要风格来源；常规范围保持在 Green/Aqua/Blue Saturation 约 -6 到 +4、Green/Yellow Luminance 约 0 到 +5、Blue Luminance 约 -3 到 +2。对于 >=3 星的最终单张精修，可以按预览扩大 HSL 调整，但要避免草地、天空、水面断层或塑料感。
 - 裁剪后暗角默认不加：PostCropVignetteAmount=0。只有主体居中、天空大或画面边缘松散的单张风光才考虑极轻微暗角，通常控制在 -1 到 -3；薰衣草/花田这类边缘松散的大场景可在确认不出现明显黑角时用到 -5。全景接片源片不要在合成前加暗角，等合成后再判断。
 - 风光可以适量增加 Texture、Clarity、Dehaze。
@@ -115,12 +117,18 @@ XMP 写入建议：
 - 列出 >=3星 的文件名。
 - 初筛报告说明只写入了 rating 和 sidecar 标识字段，没有写 Label 或 Lightroom 粗修参数。
 - 如果执行 LR 分支，说明哪些 Lightroom 字段已经写入，哪些字段可能需要 Lightroom 读入后重新计算或确认，并提醒用户在 Lightroom Classic 中选择 RAW 后执行 `Metadata > Read Metadata from Files`，让 `.xmp` sidecar 生效。
+- 如果执行 LR 分支，说明使用了哪个 `mt lr-apply --style` profile；如果用户之后提供手工精修 `.xmp`，需要把它作为该场景类别的学习样本，而不是覆盖所有场景的统一默认值。
 - 如果执行 LR 分支，用户读取元数据后，如果是新风格试调或大批量粗修，需要对应用后的效果做二次 Review：检查方向、自动水平/裁切、主体构图、曝光一致性、阴影是否发灰、颜色是否过饱和、Texture/Clarity/Dehaze 是否显脏。竖拍和带旋转 Orientation 的照片不要盲目启用自动 Level。
 - 如果执行 AI 分支，列出各个 codex/ 输出目录、生成数量、manifest/prompt 记录和 codex/_contact_sheet.jpg 路径。
 - 说明是否存在 portrait 目录，以及每个人像编号目录的 RAW/HIF 数量。
 - 说明是否存在 panorama 目录，以及每个全景编号目录的 RAW/HIF 数量。
 - 确认临时 review_jpg/ 已删除。
+- 确认临时 `lr_plan.tsv` 和 `raw_stats.tsv` 已删除。
 - 如果生成了接触表，说明原目录 _contact_sheet.jpg、portrait/_contact_sheet.jpg、panorama/_contact_sheet.jpg 的位置；不存在某类目录时不要编造对应接触表。
+
+后续只有两个用户面对的流程：
+- 初筛：本提示词负责的组织、评级、接触表和默认 LR 粗修；只有明确要求只初筛时才不写 LR 粗修参数。
+- 成片归档：用户在 Lightroom 手工精修并导出最终 JPG 后，运行 `mt finalize <照片目录> --scene <场景类别>`。该流程以 Lightroom 导出文件为最终名单：根目录 `raw/Export/` 和 `portrait/<n>/raw/Export/` 里的文件名 stem 决定要归档哪些原始 HIF；然后从根目录 `hif/` 和 `portrait/<n>/hif/` 复制匹配 HIF 到照片目录自己的 `featured/`。它不复制 Lightroom 导出文件本身，不把 `panorama/<n>/hif/` 里的全景源片 HIF 复制进目标目录，不写本地 style learning 报告。如果最终 `.xmp` 暴露出新的用户风格规律，应直接更新仓库 profile、preset notes、prompt 和记忆。不要把风格学习作为第三个独立流程，也不要再要求用户单独“提取 featured”；以后称为“成片归档”。Lightroom 生成的 `*-Pano.dng` 没有对应 HIF 是正常的，不需要报告为问题。
 ```
 
 ## Usage
