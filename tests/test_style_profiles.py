@@ -13,6 +13,7 @@ from media_toolkit.style_profiles import (
     render_style_detail,
     render_style_summary,
     style_profile_ids,
+    validate_style_profile_registry,
 )
 
 
@@ -40,6 +41,45 @@ class StyleProfilesTest(unittest.TestCase):
         self.assertEqual(mapping, lr_apply.PLAN_STYLE_BY_XMP_STYLE)
         self.assertEqual(mapping["flower-rich"], "flower")
         self.assertEqual(mapping["travel-rich"], "travel")
+
+    def test_registry_rejects_forbidden_lightroom_fields(self):
+        registry = {
+            "profiles": [
+                {
+                    "id": "bad",
+                    "plan_style": "travel",
+                    "xmp_fields": {
+                        "CameraProfile": "Camera ST",
+                        "ToneCurveName2012": "Custom",
+                        "ToneCurvePV2012": "0, 0, 255, 255",
+                        "PostCropVignetteAmount": "-2",
+                        "Temperature": "5200",
+                    },
+                }
+            ]
+        }
+
+        with self.assertRaisesRegex(ValueError, "forbidden XMP fields"):
+            validate_style_profile_registry(registry)
+
+    def test_registry_rejects_too_dark_vignette(self):
+        registry = {
+            "profiles": [
+                {
+                    "id": "bad",
+                    "plan_style": "travel",
+                    "xmp_fields": {
+                        "CameraProfile": "Camera ST",
+                        "ToneCurveName2012": "Custom",
+                        "ToneCurvePV2012": "0, 0, 255, 255",
+                        "PostCropVignetteAmount": "-20",
+                    },
+                }
+            ]
+        }
+
+        with self.assertRaisesRegex(ValueError, "too-dark"):
+            validate_style_profile_registry(registry)
 
     def test_style_detail_mentions_plan_style(self):
         detail = render_style_detail(get_style_profile("flower-rich"))

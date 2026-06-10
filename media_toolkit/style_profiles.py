@@ -4,17 +4,26 @@ import json
 from importlib import resources
 from typing import Any
 
+REQUIRED_XMP_FIELDS = {
+    "CameraProfile",
+    "ToneCurveName2012",
+    "ToneCurvePV2012",
+    "PostCropVignetteAmount",
+}
+FORBIDDEN_XMP_FIELDS = {"WhiteBalance", "Temperature", "Tint"}
+MIN_POST_CROP_VIGNETTE = -7
+
 
 def load_style_profile_registry() -> dict[str, Any]:
     text = resources.files("media_toolkit").joinpath("style_profiles.json").read_text(
         encoding="utf-8"
     )
     registry = json.loads(text)
-    _validate_registry(registry)
+    validate_style_profile_registry(registry)
     return registry
 
 
-def _validate_registry(registry: dict[str, Any]) -> None:
+def validate_style_profile_registry(registry: dict[str, Any]) -> None:
     profile_ids: set[str] = set()
     for profile in registry.get("profiles", []):
         profile_id = profile.get("id")
@@ -33,6 +42,28 @@ def _validate_registry(registry: dict[str, Any]) -> None:
             for key, value in xmp_fields.items()
         ):
             raise ValueError(f"style profile {profile_id} has non-string XMP fields")
+        missing_fields = REQUIRED_XMP_FIELDS.difference(xmp_fields)
+        if missing_fields:
+            missing = ", ".join(sorted(missing_fields))
+            raise ValueError(
+                f"style profile {profile_id} is missing XMP fields: {missing}"
+            )
+        forbidden_fields = FORBIDDEN_XMP_FIELDS.intersection(xmp_fields)
+        if forbidden_fields:
+            forbidden = ", ".join(sorted(forbidden_fields))
+            raise ValueError(
+                f"style profile {profile_id} has forbidden XMP fields: {forbidden}"
+            )
+        try:
+            vignette = int(xmp_fields["PostCropVignetteAmount"])
+        except ValueError as exc:
+            raise ValueError(
+                f"style profile {profile_id} has invalid PostCropVignetteAmount"
+            ) from exc
+        if vignette < MIN_POST_CROP_VIGNETTE:
+            raise ValueError(
+                f"style profile {profile_id} has too-dark PostCropVignetteAmount"
+            )
 
 
 def list_style_profiles() -> list[dict[str, Any]]:
