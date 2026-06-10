@@ -1,14 +1,11 @@
-import importlib.util
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "verify_cull.py"
-SPEC = importlib.util.spec_from_file_location("verify_cull", SCRIPT_PATH)
-verify_cull = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(verify_cull)
+from media_toolkit.commands import verify_cull
 
 
 class VerifyCullTest(unittest.TestCase):
@@ -97,7 +94,8 @@ class VerifyCullTest(unittest.TestCase):
             (root / "raw").mkdir()
             (root / "raw/DSC0001.ARW").write_text("raw", encoding="utf-8")
 
-            exit_code = verify_cull.main([str(root)])
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                exit_code = verify_cull.main([str(root)])
 
         self.assertEqual(exit_code, 1)
 

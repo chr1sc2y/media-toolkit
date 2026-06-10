@@ -1,25 +1,27 @@
-import importlib.util
 import os
 import subprocess
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "finalize.py"
-SPEC = importlib.util.spec_from_file_location("finalize", SCRIPT_PATH)
-finalize = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(finalize)
+from media_toolkit.commands import finalize
 
 
 class FinalizeTest(unittest.TestCase):
-    def test_finalize_copies_hif_to_photo_directory_featured(self):
+    def quiet_call(self, func, *args, **kwargs):
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            return func(*args, **kwargs)
+
+    def test_finalize_copies_hif_to_explicit_destination(self):
         with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            destination = root / "archive"
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "archive"
             (root / "raw" / "Export").mkdir(parents=True)
-            (root / "hif").mkdir()
+            (root / "hif").mkdir(parents=True)
             (root / "raw" / "DSC0001.ARW").write_text("raw", encoding="utf-8")
             (root / "raw" / "Export" / "DSC0001.jpg").write_text(
                 "export", encoding="utf-8"
@@ -46,7 +48,8 @@ class FinalizeTest(unittest.TestCase):
             os.utime(source_hif, (1_600_000_000, 1_600_000_000))
 
             self.assertTrue(
-                finalize.finalize_directory(
+                self.quiet_call(
+                    finalize.finalize_directory,
                     root, copy_to=destination, scene="flower-field"
                 )
             )
@@ -59,12 +62,13 @@ class FinalizeTest(unittest.TestCase):
             self.assertFalse((root / "featured").exists())
             self.assertFalse((root / "style_learning").exists())
 
-    def test_finalize_copies_in_filename_order_to_photo_directory_featured(self):
+    def test_finalize_copies_in_filename_order_to_explicit_destination(self):
         with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            destination = root / "archive"
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "archive"
             (root / "raw" / "Export").mkdir(parents=True)
-            (root / "hif").mkdir()
+            (root / "hif").mkdir(parents=True)
 
             for stem in ("DSC0002", "DSC0001"):
                 (root / "raw" / "Export" / f"{stem}.jpg").write_text(
@@ -74,7 +78,8 @@ class FinalizeTest(unittest.TestCase):
                 hif.write_text(stem, encoding="utf-8")
 
             self.assertTrue(
-                finalize.finalize_directory(
+                self.quiet_call(
+                    finalize.finalize_directory,
                     root, copy_to=destination, scene="ordering-test"
                 )
             )
@@ -84,12 +89,13 @@ class FinalizeTest(unittest.TestCase):
                 ["DSC0001.HIF", "DSC0002.HIF"],
             )
 
-    def test_finalize_skips_existing_photo_directory_featured_files(self):
+    def test_finalize_skips_existing_explicit_destination_files(self):
         with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            destination = root / "archive"
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "archive"
             (root / "raw" / "Export").mkdir(parents=True)
-            (root / "hif").mkdir()
+            (root / "hif").mkdir(parents=True)
             destination.mkdir(parents=True)
             existing = destination / "DSC0001.HIF"
             existing.write_text("existing", encoding="utf-8")
@@ -100,7 +106,8 @@ class FinalizeTest(unittest.TestCase):
             (root / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
 
             self.assertFalse(
-                finalize.finalize_directory(
+                self.quiet_call(
+                    finalize.finalize_directory,
                     root, copy_to=destination, scene="ordering-test"
                 )
             )
@@ -108,17 +115,63 @@ class FinalizeTest(unittest.TestCase):
             self.assertEqual(existing.read_text(encoding="utf-8"), "existing")
 
     def test_finalize_does_not_accept_legacy_sd_destination_option(self):
-        with self.assertRaises(SystemExit):
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             finalize.parse_args(["/tmp/photos", "--dest", "/Volumes/SD/DCIM/101MSDCF"])
 
     def test_finalize_requires_copy_destination(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self.assertEqual(finalize.main([str(root)]), 2)
+            self.assertEqual(self.quiet_call(finalize.main, [str(root)]), 2)
             self.assertEqual(
-                finalize.main([str(root), "--photos-album", "Sony", "--photos-dry-run"]),
+                self.quiet_call(
+                    finalize.main,
+                    [str(root), "--photos-album", "Sony", "--photos-dry-run"],
+                ),
                 2,
             )
+
+    def test_finalize_hif_only_copies_without_photos_import(self):
+        with TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "sdcard"
+            (root / "raw" / "Export").mkdir(parents=True)
+            (root / "hif").mkdir(parents=True)
+            (root / "raw" / "Export" / "DSC0001.jpg").write_text(
+                "export", encoding="utf-8"
+            )
+            (root / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
+
+            self.assertEqual(
+                self.quiet_call(
+                    finalize.main,
+                    [str(root), "--copy-to", str(destination), "--hif-only"]
+                ),
+                0,
+            )
+
+            self.assertEqual((destination / "DSC0001.HIF").read_text(), "hif")
+
+    def test_finalize_rejects_copy_destination_inside_source(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            destination = root / "archive"
+            (root / "raw" / "Export").mkdir(parents=True)
+            (root / "hif").mkdir()
+            (root / "raw" / "Export" / "DSC0001.jpg").write_text(
+                "export", encoding="utf-8"
+            )
+            (root / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
+
+            self.assertEqual(
+                self.quiet_call(
+                    finalize.main,
+                    [str(root), "--copy-to", str(destination), "--hif-only"]
+                ),
+                2,
+            )
+
+            self.assertFalse(destination.exists())
 
     def test_collect_photos_exports_includes_root_portrait_and_panorama(self):
         with TemporaryDirectory() as tmp:
@@ -147,7 +200,8 @@ class FinalizeTest(unittest.TestCase):
             runner = Mock()
 
             self.assertTrue(
-                finalize.import_exports_to_photos(
+                self.quiet_call(
+                    finalize.import_exports_to_photos,
                     root,
                     album="Sony",
                     dry_run=True,
@@ -169,7 +223,8 @@ class FinalizeTest(unittest.TestCase):
             runner = Mock(return_value=subprocess.CompletedProcess(["osascript"], 0))
 
             self.assertTrue(
-                finalize.import_exports_to_photos(
+                self.quiet_call(
+                    finalize.import_exports_to_photos,
                     root,
                     album="Sony",
                     runner=runner,
@@ -188,17 +243,19 @@ class FinalizeTest(unittest.TestCase):
 
     def test_finalize_can_copy_hif_and_import_exports_in_one_run(self):
         with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            destination = root / "sd" / "DCIM" / "101MSDCF"
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "sd" / "DCIM" / "101MSDCF"
             (root / "raw" / "Export").mkdir(parents=True)
-            (root / "hif").mkdir()
+            (root / "hif").mkdir(parents=True)
             (root / "raw" / "Export" / "DSC0001.jpg").write_text(
                 "export", encoding="utf-8"
             )
             (root / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
 
             self.assertTrue(
-                finalize.finalize_directory(
+                self.quiet_call(
+                    finalize.finalize_directory,
                     root,
                     copy_to=destination,
                     scene="grassland",
@@ -208,19 +265,43 @@ class FinalizeTest(unittest.TestCase):
             )
             self.assertEqual((destination / "DSC0001.HIF").read_text(), "hif")
 
-    def test_main_defaults_photos_album_to_sony(self):
+    def test_finalize_dry_run_does_not_copy_hif_or_import_photos(self):
         with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            destination = root / "sd" / "DCIM" / "101MSDCF"
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "sd" / "DCIM" / "101MSDCF"
             (root / "raw" / "Export").mkdir(parents=True)
-            (root / "hif").mkdir()
+            (root / "hif").mkdir(parents=True)
             (root / "raw" / "Export" / "DSC0001.jpg").write_text(
                 "export", encoding="utf-8"
             )
             (root / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
 
             self.assertEqual(
-                finalize.main(
+                self.quiet_call(
+                    finalize.main,
+                    [str(root), "--copy-to", str(destination), "--dry-run"],
+                ),
+                0,
+            )
+
+            self.assertFalse(destination.exists())
+
+    def test_main_defaults_photos_album_to_sony(self):
+        with TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "sd" / "DCIM" / "101MSDCF"
+            (root / "raw" / "Export").mkdir(parents=True)
+            (root / "hif").mkdir(parents=True)
+            (root / "raw" / "Export" / "DSC0001.jpg").write_text(
+                "export", encoding="utf-8"
+            )
+            (root / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
+
+            self.assertEqual(
+                self.quiet_call(
+                    finalize.main,
                     [str(root), "--copy-to", str(destination), "--photos-dry-run"]
                 ),
                 0,

@@ -1,14 +1,11 @@
-import importlib.util
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "portrait_organize.py"
-SPEC = importlib.util.spec_from_file_location("portrait_organize", SCRIPT_PATH)
-portrait_organize = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(portrait_organize)
+from media_toolkit.commands import portrait_organize
 
 
 class PortraitOrganizeTest(unittest.TestCase):
@@ -103,7 +100,11 @@ class PortraitOrganizeTest(unittest.TestCase):
                 [str(root), "--manifest", str(manifest), "--dry-run"]
             )
 
-            with patch.object(portrait_organize, "run_command") as run_command:
+            with (
+                patch.object(portrait_organize, "run_command") as run_command,
+                redirect_stdout(StringIO()),
+                redirect_stderr(StringIO()),
+            ):
                 exit_code = portrait_organize.organize_portraits(args)
 
             self.assertEqual(exit_code, 0)
@@ -124,7 +125,8 @@ class PortraitOrganizeTest(unittest.TestCase):
             )
             args = portrait_organize.parse_args([str(root), "--dry-run"])
 
-            exit_code = portrait_organize.organize_portraits(args)
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                exit_code = portrait_organize.organize_portraits(args)
 
             self.assertEqual(exit_code, 0)
 

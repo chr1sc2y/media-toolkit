@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scripts.organize import main, organize_directory
+from media_toolkit.commands.organize import main, organize_directory
 
 
 class OrganizeSonyMediaTest(unittest.TestCase):
@@ -88,9 +88,8 @@ class OrganizeSonyMediaTest(unittest.TestCase):
             (root / "DSC0001.ARW").write_text("raw", encoding="utf-8")
 
             stdout = StringIO()
-            with patch("sys.argv", ["organize.py", str(root)]):
-                with patch("sys.stdout", stdout):
-                    exit_code = main()
+            with patch("sys.stdout", stdout):
+                exit_code = main([str(root)])
 
             output = stdout.getvalue()
             self.assertEqual(exit_code, 0)

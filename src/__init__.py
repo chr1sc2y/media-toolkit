@@ -1,12 +1,7 @@
-"""
-FFmpeg Python wrapper for video and image compression.
-"""
+"""Compatibility exports for the old src package."""
 
-# Core utilities
-from .core import traverse, FileContext
-
-# Video processing
-from .video_processing import (
+from media_toolkit.legacy_processing import (
+    FileContext,
     compress_video,
     compress_drone_video,
     compress_rate,
@@ -16,16 +11,13 @@ from .video_processing import (
     get_video_resolution,
     format_file_size,
     print_video_info,
+    compress_image,
+    traverse,
 )
 
-# Image processing
-from .image_processing import compress_image
-
 __all__ = [
-    # Core
     "traverse",
     "FileContext",
-    # Video
     "compress_video",
     "compress_drone_video",
     "compress_rate",
@@ -35,6 +27,5 @@ __all__ = [
     "get_video_resolution",
     "format_file_size",
     "print_video_info",
-    # Image
     "compress_image",
 ]

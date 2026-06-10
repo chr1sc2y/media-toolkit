@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "workflows": [
+    {
+      "id": "initial-cull",
+      "name": "Initial cull",
+      "cn_name": "初筛",
+      "primary_command": "mt organize <photo-dir> && mt raw-analyze <photo-dir> --ratings \">=3\" && mt lr-plan <photo-dir> --ratings \">=3\" && mt lr-apply <photo-dir> --ratings \">=3\"",
+      "source_path_required": true,
+      "destination_path_required": false,
+      "default_behavior": "Organize media, group portrait/panorama frames, rate every RAW, build review contact sheets, then write Lightroom rough-edit XMP for >=3-star files unless the user explicitly asks for initial-cull only.",
+      "preflight": [
+        "Confirm the source photo directory exists.",
+        "Run mt status <photo-dir> --json to classify the current workflow state.",
+        "Run mt doctor <photo-dir> before changing files.",
+        "Run mt organize with --dry-run first when inspecting a new import or uncertain tree.",
+        "Report that mt organize moves files into raw/ and hif/ buckets before applying it.",
+        "Verify that the command is operating on the intended photo directory, not this repository."
+      ],
+      "must_not": [
+        "Do not copy HIF files to an archive destination.",
+        "Do not import Lightroom exports into Apple Photos.",
+        "Do not write local style learning reports.",
+        "Do not use Lightroom Export JPGs for culling or contact sheets."
+      ],
+      "agent_notes": [
+        "Use HIF files only as visual previews; use RAW evidence for exposure/color decisions.",
+        "Preserve camera white balance by default.",
+        "Use portrait/<n>/ and panorama/<n>/ numeric groups."
+      ]
+    },
+    {
+      "id": "finalize",
+      "name": "Finalize refined photos",
+      "cn_name": "成片归档",
+      "primary_command": "mt finalize <photo-dir> --copy-to <destination-dir> --photos-album Sony --scene <scene>",
+      "hif_only_command": "mt finalize <photo-dir> --copy-to <destination-dir> --hif-only --scene <scene>",
+      "source_path_required": true,
+      "destination_path_required": true,
+      "default_behavior": "Use Lightroom exports as the final pick list, copy matching original HIF previews to the explicit destination, and import Lightroom export JPGs into Apple Photos unless --hif-only is passed.",
+      "must_not": [
+        "Do not infer a destination from a single provided path.",
+        "Do not use the source directory, a child directory, featured/, ~/Downloads/featured, or a remembered path as the destination.",
+        "Do not copy Lightroom export JPGs to the HIF destination.",
+        "Do not copy panorama source-frame HIF files from panorama/<n>/hif/.",
+        "Do not delete destination contents."
+      ],
+      "preflight": [
+        "Confirm source photo directory exists.",
+        "Run mt preflight-run finalize <photo-dir> --copy-to <destination-dir> --scene <scene> for the full read-only GO/NO-GO check.",
+        "Run mt status <photo-dir> --workflow finalize --copy-to <destination-dir> --json to classify finalize readiness.",
+        "Run mt doctor <photo-dir> --workflow finalize --copy-to <destination-dir> before copying HIF files.",
+        "Require --copy-to and verify it is outside the source photo directory.",
+        "Use raw/Export and portrait/<n>/raw/Export stems as the HIF copy list.",
+        "Use --dry-run when validating a batch before copying HIF files or importing into Apple Photos.",
+        "Use --photos-dry-run only when intentionally copying HIF files while validating the Photos import list."
+      ]
+    },
+    {
+      "id": "learn-style",
+      "name": "Learn refined color style",
+      "cn_name": "学习调色",
+      "primary_command": "Update repo style profiles, preset notes, prompts, and memory from manual Lightroom refinements.",
+      "source_path_required": true,
+      "destination_path_required": false,
+      "default_behavior": "Extract durable scene-specific style lessons from manually refined XMP/export evidence and fold them back into repository knowledge.",
+      "must_not": [
+        "Do not organize media.",
+        "Do not write rough-edit XMP.",
+        "Do not finalize/archive/copy HIF files.",
+        "Do not delete media.",
+        "Do not create per-photo-directory learning reports."
+      ],
+      "agent_notes": [
+        "This is a maintenance activity, not a third user-facing photo processing workflow.",
+        "Inspect existing scene directions with mt styles or mt styles <profile> --json before updating repo knowledge.",
+        "Keep scene-specific style directions separate."
+      ]
+    }
+  ]
+}

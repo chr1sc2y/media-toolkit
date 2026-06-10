@@ -9,27 +9,87 @@ Use `mt` with clear long command names as the primary interface for humans and
 agents. The old files in `scripts/` remain compatibility entry points, but new
 instructions should prefer `mt`.
 
+Before choosing commands for a user request, inspect the agent workflow
+registry when the task maps to a reusable workflow:
+
+```bash
+mt commands
+mt commands finalize
+mt commands --json
+mt workflows
+mt workflows finalize
+mt workflows --json
+mt status <photo-dir>
+mt batch-report <photo-dir>
+mt doctor <photo-dir>
+mt doctor <photo-dir> --workflow finalize --copy-to <destination-dir>
+mt preflight-run finalize <photo-dir> --copy-to <destination-dir> --scene <scene>
+```
+
+The command registry lives at `media_toolkit/command_registry.py` and records
+command modules, aliases, side effects, dry-run support, and destination
+requirements. The workflow registry lives at `media_toolkit/workflows.json` and
+records workflow names, required paths, default behavior, and hard "must not"
+rules. Treat these as the machine-readable source of truth; prose in this file
+expands the same rules.
+
+New command behavior should live in `media_toolkit/commands/` plus reusable
+package modules under `media_toolkit/`. Keep `scripts/` as compatibility
+wrappers only; do not put new command behavior there.
+
 | Clear command | Purpose |
 | --- | --- |
-| `mt finalize` | Copy matching original HIF previews to a user-provided SD card directory and import Lightroom export JPGs into Apple Photos after manual refinement. |
+| `mt finalize` | Copy matching original HIF previews to a user-provided destination and import Lightroom export JPGs into Apple Photos after manual refinement, unless `--hif-only` is passed. |
 | `mt organize` | Move camera media into per-directory type folders such as `raw/` and `hif/`. |
 | `mt fill-locations` | Plan or apply missing Apple Photos location fixes. |
 | `mt contact-sheet` | Generate contact sheets and a manifest. |
+| `mt status` | Summarize photo directory workflow status. |
+| `mt batch-report` | Print a read-only human summary of a photo batch. |
+| `mt doctor` | Inspect a photo directory before running an agent workflow. |
+| `mt preflight-run` | Run a read-only workflow preflight sequence. |
 | `mt raw-analyze` | Write RAW histogram and clipping metrics for culling evidence. |
 | `mt lr-plan` | Suggest Lightroom exposure sliders from RAW histogram evidence. |
 | `mt lr-apply` | Write Lightroom rough-edit XMP fields from RAW evidence and scene style profiles. |
+| `mt styles` | Show agent-readable Lightroom scene style profiles. |
 | `mt rawpy-render` | Render RAW-derived JPEG inputs for selected candidates. |
 | `mt image-compress` | Compress oversized JPG/JPEG files under a maximum byte size. |
 | `mt drone` | Compress drone videos with the existing preset. |
 | `mt png-to-jpg` | Convert PNG images to JPG. |
+| `mt commands` | Show the agent-readable command registry. |
+| `mt workflows` | Show the agent-readable workflow registry. |
 
 Directory-based commands default to the current directory when no path is
 provided. `mt fill-locations` operates on Apple Photos and does not use the
 current directory as a media input.
 
-Compatibility commands and short aliases such as `mt featured`, `mt f`, `mt o`, and `mt loc` exist only as compatibility
-shortcuts. Do not use them in documentation or generated instructions unless the
-user explicitly asks for aliases.
+Use `mt status <photo-dir> --json` or `mt doctor <photo-dir> --json` before
+running mutating workflow commands. The status values are:
+
+- `ready`: no blocking workflow issue was found.
+- `blocked`: required cull artifacts, ratings, destination rules, or other
+  workflow checks are not satisfied.
+- `needs-organize`: loose RAW/HIF files are still at the inspected directory
+  root.
+- `needs-lightroom-export`: finalize was requested before Lightroom exports
+  existed in the expected `raw/Export` locations.
+
+The JSON output includes `recommendations`; prefer those suggested next actions
+over guessing from memory.
+
+For finalization, prefer `mt preflight-run finalize <photo-dir> --copy-to
+<destination-dir> --scene <scene>` before any real `mt finalize` run. It chains
+the read-only status/doctor checks with `mt finalize --dry-run` and reports
+`GO` or `NO-GO`.
+
+Use `mt styles` or `mt styles <profile> --json` before choosing an LR style
+profile. Keep learned directions scene-specific; do not collapse them into a
+single universal preset.
+
+Compatibility short aliases such as `mt o` and `mt loc` exist only as
+interactive shortcuts. Do not use them in documentation or generated
+instructions unless the user explicitly asks for aliases. Legacy
+`mt featured`/`mt f` have been removed from the `mt` launcher; use
+`mt finalize --hif-only --copy-to <destination>` for HIF-only archiving.
 
 ## Reusable Agent Workflows
 
@@ -132,25 +192,30 @@ After Lightroom manual refinement, use `mt finalize` for the final
 "成片归档" workflow. This step uses Lightroom exports as the authoritative final
 selection list: filenames in root `raw/Export/` and
 `portrait/<n>/raw/Export/` define the stems to archive. It copies the matching
-original HIF previews directly to the user-provided SD card directory from
-`--copy-to`; if no SD card destination is provided, ask the user for one instead
-of inferring a local `featured/` folder. It copies only matching HIF files from
-`hif/` or `portrait/<n>/hif/`; it does not copy panorama source-frame HIF files
-from `panorama/<n>/hif/`, does not copy the Lightroom export files to the SD
-card, and does not generate a contact sheet by default. Use `--scene` to name
+original HIF previews directly to the user-provided destination from
+`--copy-to`; if no copy destination is provided, ask the user for one instead
+of inferring a local `featured/` folder, the source root, or a prior remembered
+path. A single supplied path is the source photo directory, not the copy
+destination. `--copy-to` must be outside the source photo directory. It copies
+only matching HIF files from `hif/` or `portrait/<n>/hif/`; it does not copy
+panorama source-frame HIF files from `panorama/<n>/hif/`, does not copy the
+Lightroom export files to the HIF destination, and does not generate a contact
+sheet by default. Use `--scene` to name
 the scenery class for reporting and future repo-level style tuning, for example
 `mt finalize <photo-dir> --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --scene flower-field`.
+When the user asks to only copy HIF files, use
+`mt finalize <photo-dir> --copy-to <destination> --hif-only --scene <scene>`.
 Copy HIF with metadata-preserving semantics; do not rewrite EXIF, timestamps,
-or image content. Never delete SD card contents; leave existing files untouched.
+or image content. Never delete destination contents; leave existing files untouched.
 By default, `mt finalize` imports Lightroom export images into the Apple Photos
 `Sony` album; `--photos-album` can override the album name. Imports include
 files from `raw/Export/`, `portrait/<n>/raw/Export/`, and
-`panorama/<n>/raw/Export/` as part of finalization. Use `--photos-dry-run` first
-when validating a batch.
-`--photos-dry-run` only prevents Apple Photos import; it does not make HIF
-copying dry-run. Photos import may require macOS automation permission and may
-not fully prevent duplicates, so report any import failure as a separate partial
-failure from HIF copying.
+`panorama/<n>/raw/Export/` as part of finalization. Use `--dry-run` first when
+validating a batch; it prevents both HIF copying and Apple Photos import. Use
+`--photos-dry-run` only when you intentionally want to copy HIF files while
+listing the Photos import plan. Photos import may require macOS automation
+permission and may not fully prevent duplicates, so report any import failure as
+a separate partial failure from HIF copying.
 Do not write per-photo-directory style learning reports; fold user refinement
 learning back into repository profiles, preset notes, prompts, and memory.
 Lightroom-generated panorama DNG files such as `*-Pano.dng` are final panorama
@@ -261,9 +326,12 @@ separate user-facing workflow. The two user-facing workflows are:
    explicitly asks for initial-cull only.
 2. Finalize (`成片归档`): after the user manually refines photos in Lightroom,
    export the final picks from Lightroom, then copy matching original HIF
-   previews directly to the user-provided SD card directory and import
-   Lightroom export JPGs into Apple Photos. The final pick list comes from
-   `raw/Export/` and `portrait/<n>/raw/Export/`, not from every remaining RAW.
+   previews directly to the user-provided destination and import Lightroom
+   export JPGs into Apple Photos unless `--hif-only` is passed. The final pick
+   list comes from `raw/Export/` and `portrait/<n>/raw/Export/`, not from every
+   remaining RAW. If only one path is supplied, treat it as the source photo
+   directory and ask for `--copy-to`; never use the source root or a child
+   directory as the archive destination.
    When manual XMP refinements teach a new scene direction, update repository
    profiles/docs directly instead of writing a local learning report into the
    photo directory.

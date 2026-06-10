@@ -1,14 +1,11 @@
-import importlib.util
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "panorama_organize.py"
-SPEC = importlib.util.spec_from_file_location("panorama_organize", SCRIPT_PATH)
-panorama_organize = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(panorama_organize)
+from media_toolkit.commands import panorama_organize
 
 
 class PanoramaOrganizeTest(unittest.TestCase):
@@ -66,7 +63,11 @@ class PanoramaOrganizeTest(unittest.TestCase):
                 [str(root), "--manifest", str(manifest), "--dry-run"]
             )
 
-            with patch.object(panorama_organize, "run_command") as run_command:
+            with (
+                patch.object(panorama_organize, "run_command") as run_command,
+                redirect_stdout(StringIO()),
+                redirect_stderr(StringIO()),
+            ):
                 exit_code = panorama_organize.organize_panoramas(args)
 
             self.assertEqual(exit_code, 0)
@@ -87,7 +88,8 @@ class PanoramaOrganizeTest(unittest.TestCase):
             )
             args = panorama_organize.parse_args([str(root), "--dry-run"])
 
-            exit_code = panorama_organize.organize_panoramas(args)
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                exit_code = panorama_organize.organize_panoramas(args)
 
             self.assertEqual(exit_code, 0)
 

@@ -1,5 +1,6 @@
 import unittest
 import re
+from dataclasses import replace
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,6 +8,7 @@ from unittest.mock import patch
 
 from media_toolkit.cli import (
     build_script_argv,
+    run_module,
     command_table,
     main,
     prompt_for_directory,
@@ -17,7 +19,6 @@ from media_toolkit.cli import (
 
 class MediaToolkitCliTest(unittest.TestCase):
     def test_resolves_short_aliases(self):
-        self.assertEqual(resolve_command("f").script_name, "extract_featured_raw.py")
         self.assertEqual(resolve_command("o").script_name, "organize.py")
         self.assertEqual(resolve_command("loc").script_name, "fill_missing_photo_locations.py")
         self.assertEqual(resolve_command("drone").script_name, "compress_drone_video.py")
@@ -25,7 +26,6 @@ class MediaToolkitCliTest(unittest.TestCase):
 
     def test_resolves_long_commands(self):
         self.assertEqual(resolve_command("finalize").script_name, "finalize.py")
-        self.assertEqual(resolve_command("featured").script_name, "extract_featured_raw.py")
         self.assertEqual(resolve_command("organize").script_name, "organize.py")
         self.assertEqual(resolve_command("fill-locations").script_name, "fill_missing_photo_locations.py")
         self.assertEqual(resolve_command("contact-sheet").script_name, "generate_contact_sheets.py")
@@ -33,12 +33,25 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("panorama-organize").script_name, "panorama_organize.py")
         self.assertEqual(resolve_command("manifest-template").script_name, "manifest_template.py")
         self.assertEqual(resolve_command("verify-cull").script_name, "verify_cull.py")
+        self.assertEqual(resolve_command("doctor").script_name, "doctor.py")
+        self.assertEqual(resolve_command("status").script_name, "status.py")
+        self.assertEqual(resolve_command("preflight-run").script_name, "preflight_run.py")
+        self.assertEqual(resolve_command("batch-report").script_name, "batch_report.py")
         self.assertEqual(resolve_command("raw-analyze").script_name, "raw_analyze.py")
         self.assertEqual(resolve_command("lr-plan").script_name, "lr_plan.py")
         self.assertEqual(resolve_command("lr-apply").script_name, "lr_apply.py")
+        self.assertEqual(resolve_command("styles").script_name, "styles.py")
         self.assertEqual(resolve_command("rawpy-render").script_name, "rawpy_render.py")
         self.assertEqual(resolve_command("image-compress").script_name, "compress_images_under_size.py")
         self.assertEqual(resolve_command("png-to-jpg").script_name, "png_to_jpg.py")
+        self.assertEqual(resolve_command("commands").script_name, "commands.py")
+        self.assertEqual(resolve_command("workflows").script_name, "workflows.py")
+
+    def test_featured_compatibility_aliases_are_removed_from_mt(self):
+        for name in ("featured", "feature", "f"):
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError):
+                    resolve_command(name)
 
     def test_confirms_current_directory_when_user_enters_y(self):
         command = resolve_command("o")
@@ -305,20 +318,21 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIn("Directory does not exist:", stderr.getvalue())
 
     def test_does_not_add_current_directory_when_positional_is_present(self):
-        command = resolve_command("f")
+        command = resolve_command("finalize")
         argv = build_script_argv(
             command,
-            ["/tmp/event", "--copy-to", "/tmp/archive", "--recursive"],
+            ["/tmp/event", "--copy-to", "/tmp/archive", "--recursive", "--hif-only"],
         )
 
         self.assertEqual(
             argv,
             [
-                "extract_featured_raw.py",
+                "finalize.py",
                 "/tmp/event",
                 "--copy-to",
                 "/tmp/archive",
                 "--recursive",
+                "--hif-only",
             ],
         )
 
@@ -327,6 +341,86 @@ class MediaToolkitCliTest(unittest.TestCase):
         argv = build_script_argv(command, ["--describe"])
 
         self.assertEqual(argv, ["fill_missing_photo_locations.py", "--describe"])
+
+    def test_migrated_commands_run_package_modules_without_runpy(self):
+        command = resolve_command("workflows")
+        stdout = StringIO()
+        with patch("media_toolkit.cli.runpy.run_path") as run_path, patch("sys.stdout", stdout):
+            exit_code = run_module(command, ["finalize"])
+
+        self.assertEqual(exit_code, 0)
+        run_path.assert_not_called()
+        self.assertIn("成片归档", stdout.getvalue())
+
+    def test_verify_and_manifest_commands_are_package_modules(self):
+        self.assertEqual(
+            resolve_command("verify-cull").module_name,
+            "media_toolkit.commands.verify_cull",
+        )
+        self.assertEqual(
+            resolve_command("manifest-template").module_name,
+            "media_toolkit.commands.manifest_template",
+        )
+        self.assertEqual(
+            resolve_command("portrait-organize").module_name,
+            "media_toolkit.commands.portrait_organize",
+        )
+        self.assertEqual(
+            resolve_command("panorama-organize").module_name,
+            "media_toolkit.commands.panorama_organize",
+        )
+        self.assertEqual(
+            resolve_command("organize").module_name,
+            "media_toolkit.commands.organize",
+        )
+        self.assertEqual(
+            resolve_command("fill-locations").module_name,
+            "media_toolkit.commands.fill_locations",
+        )
+        self.assertEqual(
+            resolve_command("contact-sheet").module_name,
+            "media_toolkit.commands.contact_sheet",
+        )
+        self.assertIn("move", resolve_command("organize").side_effects)
+        self.assertTrue(resolve_command("organize").supports_dry_run)
+        self.assertEqual(
+            resolve_command("raw-analyze").module_name,
+            "media_toolkit.commands.raw_analyze",
+        )
+        self.assertEqual(
+            resolve_command("lr-plan").module_name,
+            "media_toolkit.commands.lr_plan",
+        )
+        self.assertEqual(
+            resolve_command("lr-apply").module_name,
+            "media_toolkit.commands.lr_apply",
+        )
+        self.assertEqual(
+            resolve_command("rawpy-render").module_name,
+            "media_toolkit.commands.rawpy_render",
+        )
+        self.assertEqual(
+            resolve_command("image-compress").module_name,
+            "media_toolkit.commands.image_compress",
+        )
+        self.assertEqual(
+            resolve_command("drone").module_name,
+            "media_toolkit.commands.drone",
+        )
+        self.assertEqual(
+            resolve_command("png-to-jpg").module_name,
+            "media_toolkit.commands.png_to_jpg",
+        )
+        self.assertTrue(resolve_command("lr-apply").supports_dry_run)
+        self.assertTrue(resolve_command("image-compress").supports_dry_run)
+
+    def test_command_without_package_module_falls_back_to_script_runner(self):
+        command = replace(resolve_command("contact-sheet"), module_name=None)
+        with patch("media_toolkit.cli.run_script", return_value=0) as run_script:
+            exit_code = run_module(command, ["--help"])
+
+        self.assertEqual(exit_code, 0)
+        run_script.assert_called_once_with(command, ["--help"])
 
     def test_command_table_prioritizes_clear_long_commands(self):
         table = command_table()
@@ -338,10 +432,17 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIn("mt panorama-organize", table)
         self.assertIn("mt manifest-template", table)
         self.assertIn("mt verify-cull", table)
+        self.assertIn("mt doctor", table)
+        self.assertIn("mt status", table)
+        self.assertIn("mt preflight-run", table)
+        self.assertIn("mt batch-report", table)
         self.assertIn("mt raw-analyze", table)
         self.assertIn("mt lr-plan", table)
         self.assertIn("mt lr-apply", table)
+        self.assertIn("mt styles", table)
         self.assertIn("mt rawpy-render", table)
+        self.assertIn("mt commands", table)
+        self.assertIn("mt workflows", table)
         self.assertIsNone(re.search(r"^\s*mt f\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt featured\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt o\s", table, re.MULTILINE))

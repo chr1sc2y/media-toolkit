@@ -1,13 +1,10 @@
-import importlib.util
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "manifest_template.py"
-SPEC = importlib.util.spec_from_file_location("manifest_template", SCRIPT_PATH)
-manifest_template = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(manifest_template)
+from media_toolkit.commands import manifest_template
 
 
 class ManifestTemplateTest(unittest.TestCase):
@@ -79,7 +76,8 @@ class ManifestTemplateTest(unittest.TestCase):
             (root / "hif/DSC0001.HIF").write_text("hif", encoding="utf-8")
             args = manifest_template.parse_args([str(root), "--kind", "portrait"])
 
-            exit_code = manifest_template.generate_template(args)
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                exit_code = manifest_template.generate_template(args)
 
             self.assertEqual(exit_code, 0)
             self.assertTrue((root / "portrait/portrait_manifest.tsv").exists())
@@ -97,7 +95,8 @@ class ManifestTemplateTest(unittest.TestCase):
             )
             args = manifest_template.parse_args([str(root), "--kind", "portrait"])
 
-            exit_code = manifest_template.generate_template(args)
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                exit_code = manifest_template.generate_template(args)
 
             self.assertEqual(exit_code, 1)
 

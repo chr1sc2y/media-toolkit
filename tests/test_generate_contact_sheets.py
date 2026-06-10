@@ -1,14 +1,9 @@
-import importlib.util
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "generate_contact_sheets.py"
-SPEC = importlib.util.spec_from_file_location("generate_contact_sheets", SCRIPT_PATH)
-generate_contact_sheets = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(generate_contact_sheets)
+from media_toolkit.commands import contact_sheet as generate_contact_sheets
 
 
 class GenerateContactSheetsTest(unittest.TestCase):

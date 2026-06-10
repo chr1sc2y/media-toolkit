@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "travel-rich",
+      "name": "Rich general travel",
+      "cn_name": "通用浓郁旅行",
+      "plan_style": "travel",
+      "summary": "Richer general travel landscape baseline with protected highlights, natural midtone density, restrained global saturation, and Camera ST color energy.",
+      "use_when": [
+        "General non-portrait travel landscapes",
+        "Grasslands, roads, towns, open scenery, and mixed weather scenes that need a polished but believable travel-photo look"
+      ],
+      "avoid_when": [
+        "Dedicated bright flower/lavender fields that need the flower-field learned direction",
+        "Delicate portraits where Camera PT and softer presence controls are safer"
+      ]
+    },
+    {
+      "id": "flower-rich",
+      "name": "Bright flower field travel",
+      "cn_name": "明亮花田旅行",
+      "plan_style": "flower",
+      "summary": "Learned flower-field direction with stronger highlight protection, much more shadow recovery, softer contrast, controlled blue HSL, subtle vignette, and stronger calibration color energy.",
+      "use_when": [
+        "Lavender or flower-field travel scenes with sky, distant mountains, field rows, and strong location context",
+        "Bright outdoor flower scenes where the final look should be airy, colorful, and polished"
+      ],
+      "avoid_when": [
+        "Ordinary overcast grasslands",
+        "Night/city work",
+        "Portraits or already oversaturated close-up flower/bee frames"
+      ]
+    },
+    {
+      "id": "sairim-lake-east",
+      "name": "Sairim Lake east open travel",
+      "cn_name": "赛里木湖东岸开阔旅行",
+      "plan_style": "flower",
+      "summary": "Restrained lake/open-travel calibration for blue water, sky, and open grassland edges without pushing the scene into synthetic saturation.",
+      "use_when": [
+        "Open lake and sky scenes with blue/cyan separation needs",
+        "Sairim Lake east-side travel frames or similar water-and-grassland scenes"
+      ],
+      "avoid_when": [
+        "Dense purple flower fields that need flower-rich",
+        "Night/city scenes or portraits"
+      ]
+    },
+    {
+      "id": "bayanbulak-nine-bends",
+      "name": "Bayanbulak nine-bends grassland",
+      "cn_name": "巴音布鲁克九曲草原",
+      "plan_style": "travel",
+      "summary": "Grassland and winding-river direction with grounded greens, protected highlights, and restrained color separation for broad Xinjiang meadow scenes.",
+      "use_when": [
+        "Bayanbulak nine-bends and similar grassland river scenes",
+        "Broad green/yellow meadow landscapes where color should stay grounded"
+      ],
+      "avoid_when": [
+        "Lavender fields",
+        "Portraits",
+        "Snow/mountain or night/city scenes that need separate learned directions"
+      ]
+    }
+  ]
+}
