@@ -11,7 +11,7 @@ instructions should prefer `mt`.
 
 | Clear command | Purpose |
 | --- | --- |
-| `mt finalize` | Copy matching original HIF previews into the photo directory's `featured/` folder after manual refinement. |
+| `mt finalize` | Copy matching original HIF previews to a user-provided SD card directory and import Lightroom export JPGs into Apple Photos after manual refinement. |
 | `mt organize` | Move camera media into per-directory type folders such as `raw/` and `hif/`. |
 | `mt fill-locations` | Plan or apply missing Apple Photos location fixes. |
 | `mt contact-sheet` | Generate contact sheets and a manifest. |
@@ -132,12 +132,25 @@ After Lightroom manual refinement, use `mt finalize` for the final
 "成片归档" workflow. This step uses Lightroom exports as the authoritative final
 selection list: filenames in root `raw/Export/` and
 `portrait/<n>/raw/Export/` define the stems to archive. It copies the matching
-original HIF previews into the photo directory's `featured/` folder. It copies only matching HIF
-files from `hif/` or `portrait/<n>/hif/`; it does not copy panorama source-frame
-HIF files from `panorama/<n>/hif/`, does not copy the Lightroom export files
-themselves, and does not generate a contact sheet by default. Use `--scene` to
-name the scenery class for reporting and future repo-level style tuning, for
-example `mt finalize <photo-dir> --scene flower-field`.
+original HIF previews directly to the user-provided SD card directory from
+`--copy-to`; if no SD card destination is provided, ask the user for one instead
+of inferring a local `featured/` folder. It copies only matching HIF files from
+`hif/` or `portrait/<n>/hif/`; it does not copy panorama source-frame HIF files
+from `panorama/<n>/hif/`, does not copy the Lightroom export files to the SD
+card, and does not generate a contact sheet by default. Use `--scene` to name
+the scenery class for reporting and future repo-level style tuning, for example
+`mt finalize <photo-dir> --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --scene flower-field`.
+Copy HIF with metadata-preserving semantics; do not rewrite EXIF, timestamps,
+or image content. Never delete SD card contents; leave existing files untouched.
+By default, `mt finalize` imports Lightroom export images into the Apple Photos
+`Sony` album; `--photos-album` can override the album name. Imports include
+files from `raw/Export/`, `portrait/<n>/raw/Export/`, and
+`panorama/<n>/raw/Export/` as part of finalization. Use `--photos-dry-run` first
+when validating a batch.
+`--photos-dry-run` only prevents Apple Photos import; it does not make HIF
+copying dry-run. Photos import may require macOS automation permission and may
+not fully prevent duplicates, so report any import failure as a separate partial
+failure from HIF copying.
 Do not write per-photo-directory style learning reports; fold user refinement
 learning back into repository profiles, preset notes, prompts, and memory.
 Lightroom-generated panorama DNG files such as `*-Pano.dng` are final panorama
@@ -234,6 +247,12 @@ contrast while preserving highlight and shadow texture. Keep the exact curve
 scene-specific; do not force one numeric curve onto every landscape, portrait,
 night, snow, or high-contrast scene.
 
+For agent-written LR rough edits, preserve the camera white balance by default:
+do not write `WhiteBalance`, `Temperature`, or `Tint` unless the user explicitly
+asks for WB correction. Always enable lens profile correction, keep automatic
+transform/Upright off, and keep post-crop vignette subtle; never write
+`PostCropVignetteAmount` darker than `-7`.
+
 Long-term style learning is part of the finalization workflow, not a third
 separate user-facing workflow. The two user-facing workflows are:
 
@@ -242,7 +261,8 @@ separate user-facing workflow. The two user-facing workflows are:
    explicitly asks for initial-cull only.
 2. Finalize (`成片归档`): after the user manually refines photos in Lightroom,
    export the final picks from Lightroom, then copy matching original HIF
-   previews to the photo directory's `featured/` folder. The final pick list comes from
+   previews directly to the user-provided SD card directory and import
+   Lightroom export JPGs into Apple Photos. The final pick list comes from
    `raw/Export/` and `portrait/<n>/raw/Export/`, not from every remaining RAW.
    When manual XMP refinements teach a new scene direction, update repository
    profiles/docs directly instead of writing a local learning report into the

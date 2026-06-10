@@ -20,10 +20,9 @@ decisions.
 - Chromatic aberration: enable automatic lateral CA removal.
 - Upright: keep automatic Upright off by default. Inspect previews and use small
   manual `PerspectiveRotate` corrections only when the horizon is visibly wrong.
-- White balance: keep `As Shot` only while exploring or when the batch is
-  visually consistent. For final-candidate photos from the same scene/weather,
-  write an explicit shared `ColorTemperature` and `Tint` so neighboring
-  candidates do not drift in color.
+- White balance: keep the camera `As Shot` white balance unchanged in
+  agent-written rough-edit XMP. Do not write `WhiteBalance`, `Temperature`, or
+  `Tint` unless the user explicitly asks for a WB correction for that batch.
 - Sharpening: do not add extra sharpening by default, except a small amount for
   Tamron 50-400mm F4.5-6.3 A067 images.
 - Noise reduction: apply stronger luminance/color noise reduction only when
@@ -86,7 +85,7 @@ Highlights2012=-55 to -70
 Texture=5 to 7
 Vibrance=0 to 4
 Saturation=0
-ToneCurvePV2012=0, 0, 66, 59, 125, 125, 182, 188, 255, 255
+ToneCurvePV2012=2, 5, 66, 59, 125, 125, 182, 188, 255, 250
 ```
 
 Caps to keep the look natural:
@@ -126,13 +125,13 @@ while still adding a little local contrast. Keep the curve subtle, and adjust
 the exact endpoints and midpoints per scene instead of treating one numeric
 curve as universal.
 
-The user's `Sony ST.xmp` point curve is a good low-strength reference for
-landscapes because it slightly deepens lower tones, leaves the midtone anchor
-neutral, and gently lifts upper tones:
+Use a low-strength S-shaped point curve for landscapes because it slightly lifts
+the black endpoint, deepens lower tones, leaves the midtone anchor neutral,
+gently lifts upper tones, and rolls off the white endpoint:
 
 ```text
 ToneCurveName2012=Custom
-ToneCurvePV2012=0, 0, 66, 59, 125, 125, 182, 188, 255, 255
+ToneCurvePV2012=2, 5, 66, 59, 125, 125, 182, 188, 255, 250
 ToneCurvePV2012Red=0, 0, 255, 255
 ToneCurvePV2012Green=0, 0, 255, 255
 ToneCurvePV2012Blue=0, 0, 255, 255
@@ -190,28 +189,16 @@ PostCropVignetteAmount=0
 ```
 
 Use `-3` to `-5` only for centered landscapes or loose edges that need a little
-containment. The user's refined lavender-field set used `-5` consistently, but
-avoid visible dark corners and keep panorama source frames at `0` before
-stitching.
+containment. Never write a value darker than `-7`. The user's refined
+lavender-field set used `-5` consistently, but avoid visible dark corners and
+keep panorama source frames at `0` before stitching.
 
 ## Batch White Balance Consistency
 
-When a group of selected photos comes from the same scene and weather, use a
-shared white balance after visual review. This prevents one candidate from
-looking like a different edit just because `As Shot` stored a slightly different
-camera interpretation.
-
-For overcast Xinjiang grassland/river scenes, this has worked as a neutral
-starting point:
-
-```text
-WhiteBalance=Custom
-ColorTemperature=5250
-Tint=14
-```
-
-Adjust per image only when the subject or light genuinely differs, such as
-indoor light, portraits under a reflector, sunset, night scenes, or mixed light.
+Keep rough-edit sidecars from changing white balance. The user's default
+preference is to preserve the camera's own WB interpretation. WB correction is a
+manual refinement step or an explicit per-batch request, not a default agent
+rough-edit field.
 
 ## Suggested XMP Fields
 

@@ -29,9 +29,9 @@ COMMANDS = (
         canonical="finalize",
         aliases=(),
         script_name="finalize.py",
-        help="Copy matching original HIF previews into the photo directory's featured/ folder.",
+        help="Copy matching original HIF previews to an SD card folder and import exports into Photos.",
         default_cwd=True,
-        options_with_values=("--scene",),
+        options_with_values=("--copy-to", "--scene", "--photos-album"),
     ),
     Command(
         canonical="featured",
@@ -39,6 +39,7 @@ COMMANDS = (
         script_name="extract_featured_raw.py",
         help="Compatibility shortcut for old featured HIF extraction.",
         default_cwd=True,
+        options_with_values=("--copy-to",),
         visible=False,
     ),
     Command(
@@ -290,7 +291,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         epilog=(
             f"Commands:\n{command_table()}\n\n"
             "Examples:\n"
-            "  mt finalize --scene flower-field\n"
+            "  mt finalize --copy-to /Volumes/SDCARD/DCIM/100MSDCF --photos-album Sony --scene flower-field\n"
             "  mt organize --dry-run\n"
             "  mt fill-locations --describe\n"
             "  mt contact-sheet --export-only\n"

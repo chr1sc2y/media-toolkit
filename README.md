@@ -14,7 +14,7 @@ After that, run `mt` from any directory:
 
 ```bash
 mt
-mt finalize /path/to/photos --scene flower-field
+mt finalize /path/to/photos --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --scene flower-field
 mt organize /path/to/import --dry-run
 mt organize
 mt fill-locations --describe
@@ -142,7 +142,7 @@ scripts, and agent instructions.
 
 | Command | Meaning | Default path behavior |
 | --- | --- | --- |
-| `mt finalize` | Copy matching original HIF previews into the photo directory's `featured/` folder after manual refinement. | Uses current directory when no path is passed. |
+| `mt finalize` | Copy matching original HIF previews to a user-provided SD card directory and import Lightroom export JPGs into Apple Photos after manual refinement. | Uses current directory when no path is passed; ask for the SD card `--copy-to` destination if missing. |
 | `mt organize` | Move camera media into type folders such as `raw/` and `hif/`. | Uses current directory when no path is passed. |
 | `mt fill-locations` | Plan or apply missing Apple Photos geolocation fixes. | Works on Apple Photos, not the current directory. |
 | `mt contact-sheet` | Generate contact sheet images and `manifest.tsv`. | Uses current directory when no path is passed. |
@@ -166,25 +166,35 @@ Use two user-facing workflows for photo sets:
    panoramas, rate every RAW, write review contact sheets, and optionally write
    LR rough edits for Lightroom refinement.
 2. Finalize (`成片归档`): after manual Lightroom refinement, copy matching
-   original HIF previews for Lightroom-exported final picks to each photo
-   directory's `featured/` folder.
+   original HIF previews for Lightroom-exported final picks directly to the
+   user-provided SD card directory, and import Lightroom export JPGs into Apple
+   Photos.
 
 Run finalization with a scene label so the output is traceable and any useful
 manual refinement learning can be folded back into repository profiles/docs:
 
 ```bash
-mt finalize /path/to/photos --scene flower-field
-mt finalize /path/to/photos --scene grassland
-mt finalize /path/to/photos --scene overcast-travel
+mt finalize /path/to/photos --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --scene flower-field
+mt finalize /path/to/photos --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --scene grassland
+mt finalize /path/to/photos --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --photos-dry-run --scene overcast-travel
 ```
 
 The command uses Lightroom exports as the authoritative final pick list:
 filenames in `raw/Export/` and `portrait/<n>/raw/Export/` define the stems to
-archive. It copies the matching original HIF previews into the photo directory's
-`featured/` folder. It does not copy the Lightroom export files themselves,
-and it does not write local style learning reports into photo directories.
+archive. It copies the matching original HIF previews directly to the
+user-provided SD card directory from `--copy-to`; if the SD card destination is
+missing, ask the user instead of inferring a local `featured/` folder. It does
+not copy the Lightroom export files themselves to the SD card, and it does not
+write local style learning reports into photo directories.
 Lightroom-generated panorama DNG files such as `*-Pano.dng` are expected not to
-have matching HIF previews.
+have matching HIF previews. By default, `mt finalize` imports Lightroom export
+images into the Apple Photos `Sony` album; `--photos-album` can override the
+album name. Imports include files from `raw/Export/`, `portrait/<n>/raw/Export/`, and
+`panorama/<n>/raw/Export/` into Apple Photos as part of finalization. Use
+`--photos-dry-run` first when checking a new batch. Note that `--photos-dry-run`
+only prevents Apple Photos import; it does not make HIF copying dry-run. The
+first real import may trigger macOS automation permission prompts, and Photos
+duplicate handling is not guaranteed.
 
 ### RAW Analysis And Rendering
 
@@ -312,7 +322,7 @@ positions back to source files.
 ### Finalize / 成片归档
 
 ```bash
-mt finalize /path/to/photos --scene flower-field
+mt finalize /path/to/photos --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --scene flower-field
 ```
 
 Runs after refinement when `raw/Export/` contains Lightroom exports for the
@@ -322,10 +332,12 @@ final selected photos whose original HIF previews should be collected.
 - Lightroom export filenames in `portrait/<n>/raw/Export/` define selected
   portrait stems
 - matching original HIF previews are copied from `hif/` and
-  `portrait/<n>/hif/` to the photo directory's `featured/` folder
+  `portrait/<n>/hif/` directly to the `--copy-to` directory
 - panorama source-frame previews under `panorama/<n>/hif/` are not copied into
   the destination directory
-- Lightroom export files themselves are not copied by this command
+- Lightroom export files themselves are not copied to the SD card
+- `--photos-album Sony` imports Lightroom export files into Apple Photos,
+  including root, portrait, and panorama Export folders
 - Lightroom-generated `*-Pano.dng` panorama derivatives do not need matching HIF
 - missing HIF files for camera RAW stems are reported clearly
 

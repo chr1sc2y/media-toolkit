@@ -221,7 +221,15 @@ class MediaToolkitCliTest(unittest.TestCase):
         with patch("sys.stderr", stderr):
             argv = build_script_argv(
                 command,
-                ["--scene", "flower-field", "--recursive"],
+                [
+                    "--copy-to",
+                    "/tmp/archive",
+                    "--scene",
+                    "flower-field",
+                    "--photos-album",
+                    "Sony",
+                    "--recursive",
+                ],
                 interactive=False,
             )
 
@@ -300,7 +308,7 @@ class MediaToolkitCliTest(unittest.TestCase):
         command = resolve_command("f")
         argv = build_script_argv(
             command,
-            ["/tmp/event", "--recursive"],
+            ["/tmp/event", "--copy-to", "/tmp/archive", "--recursive"],
         )
 
         self.assertEqual(
@@ -308,6 +316,8 @@ class MediaToolkitCliTest(unittest.TestCase):
             [
                 "extract_featured_raw.py",
                 "/tmp/event",
+                "--copy-to",
+                "/tmp/archive",
                 "--recursive",
             ],
         )

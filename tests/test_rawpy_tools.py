@@ -247,13 +247,14 @@ class RawPyToolsTest(unittest.TestCase):
         fields = rawpy_tools.build_lr_xmp_fields(plan, style="flower-rich")
 
         self.assertEqual(fields["CameraProfile"], "Camera ST")
-        self.assertEqual(fields["WhiteBalance"], "Custom")
-        self.assertEqual(fields["Temperature"], "5450")
-        self.assertEqual(fields["Tint"], "+11")
+        self.assertNotIn("WhiteBalance", fields)
+        self.assertNotIn("Temperature", fields)
+        self.assertNotIn("Tint", fields)
         self.assertEqual(fields["Exposure2012"], "+0.34")
         self.assertEqual(fields["Highlights2012"], "-82")
         self.assertEqual(fields["Shadows2012"], "+75")
         self.assertEqual(fields["Contrast2012"], "-12")
+        self.assertEqual(fields["ProcessVersion"], "15.4")
         self.assertEqual(fields["ToneCurvePV2012"], "2, 5, 68, 55, 125, 124, 186, 193, 255, 250")
         self.assertEqual(fields["RedSaturation"], "+10")
         self.assertEqual(fields["GreenSaturation"], "+12")
@@ -279,15 +280,42 @@ class RawPyToolsTest(unittest.TestCase):
         lake = rawpy_tools.build_lr_xmp_fields(plan, style="sairim-lake-east")
         bends = rawpy_tools.build_lr_xmp_fields(plan, style="bayanbulak-nine-bends")
 
-        self.assertEqual(lake["Temperature"], "5250")
-        self.assertEqual(lake["Tint"], "+14")
+        self.assertNotIn("WhiteBalance", lake)
+        self.assertNotIn("Temperature", lake)
+        self.assertNotIn("Tint", lake)
         self.assertEqual(lake["RedSaturation"], "+4")
         self.assertEqual(lake["GreenSaturation"], "+2")
         self.assertEqual(lake["BlueSaturation"], "+6")
+        self.assertEqual(bends["ToneCurvePV2012"], "2, 5, 66, 59, 125, 125, 182, 188, 255, 250")
         self.assertEqual(bends["CameraProfile"], "Adobe Standard")
         self.assertEqual(bends["Dehaze"], "+6")
         self.assertEqual(bends["GreenSaturation"], "+14")
         self.assertEqual(bends["SaturationAdjustmentYellow"], "+17")
+
+    def test_build_lr_xmp_fields_enforces_fixed_lr_rules(self):
+        plan = rawpy_tools.LrPlan(
+            path=Path("/shoot/raw/DSC0001.ARW"),
+            stem="DSC0001",
+            rating=4,
+            exposure2012=0.0,
+            highlights2012=-55,
+            shadows2012=20,
+            whites2012=0,
+            blacks2012=0,
+            contrast2012=0,
+            rationale="example",
+        )
+
+        fields = rawpy_tools.build_lr_xmp_fields(plan, style="travel-rich")
+
+        self.assertNotIn("WhiteBalance", fields)
+        self.assertNotIn("Temperature", fields)
+        self.assertNotIn("Tint", fields)
+        self.assertEqual(fields["ToneCurvePV2012"], "2, 5, 66, 59, 125, 125, 182, 188, 255, 250")
+        self.assertGreaterEqual(int(fields["PostCropVignetteAmount"]), -7)
+        self.assertEqual(fields["LensProfileEnable"], "1")
+        self.assertEqual(fields["LensProfileSetup"], "Auto")
+        self.assertEqual(fields["PerspectiveUpright"], "0")
 
     def test_write_lr_xmp_preserves_rating_and_adds_sidecar_markers(self):
         plan = rawpy_tools.LrPlan(
@@ -321,6 +349,7 @@ class RawPyToolsTest(unittest.TestCase):
         self.assertIn('crs:CameraProfile="Camera ST"', text)
         self.assertIn('crs:Exposure2012="+0.50"', text)
         self.assertIn('crs:Highlights2012="-85"', text)
+        self.assertIn('crs:ProcessVersion="15.4"', text)
         self.assertIn('crs:RedSaturation="+10"', text)
         self.assertIn("<crs:ToneCurvePV2012>", text)
         self.assertIn("<rdf:li>2, 5</rdf:li>", text)

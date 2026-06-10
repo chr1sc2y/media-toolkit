@@ -366,9 +366,6 @@ def _format_signed_float(value: float) -> str:
 LR_STYLE_PROFILES: dict[str, dict[str, str]] = {
     "travel-rich": {
         "CameraProfile": "Camera ST",
-        "WhiteBalance": "Custom",
-        "Temperature": "5350",
-        "Tint": "+12",
         "Texture": "+6",
         "Clarity2012": "+3",
         "Dehaze": "+2",
@@ -379,7 +376,7 @@ LR_STYLE_PROFILES: dict[str, dict[str, str]] = {
         "ParametricDarks": "-4",
         "ParametricShadows": "-2",
         "ToneCurveName2012": "Custom",
-        "ToneCurvePV2012": "0, 0, 66, 59, 125, 125, 182, 188, 255, 255",
+        "ToneCurvePV2012": "2, 5, 66, 59, 125, 125, 182, 188, 255, 250",
         "ToneCurvePV2012Red": "0, 0, 255, 255",
         "ToneCurvePV2012Green": "0, 0, 255, 255",
         "ToneCurvePV2012Blue": "0, 0, 255, 255",
@@ -403,9 +400,6 @@ LR_STYLE_PROFILES: dict[str, dict[str, str]] = {
     },
     "flower-rich": {
         "CameraProfile": "Camera ST",
-        "WhiteBalance": "Custom",
-        "Temperature": "5450",
-        "Tint": "+11",
         "Texture": "+6",
         "Clarity2012": "+4",
         "Dehaze": "+2",
@@ -455,9 +449,6 @@ LR_STYLE_PROFILES: dict[str, dict[str, str]] = {
     },
     "sairim-lake-east": {
         "CameraProfile": "Camera ST",
-        "WhiteBalance": "Custom",
-        "Temperature": "5250",
-        "Tint": "+14",
         "Texture": "+6",
         "Clarity2012": "+4",
         "Dehaze": "+2",
@@ -492,9 +483,6 @@ LR_STYLE_PROFILES: dict[str, dict[str, str]] = {
     },
     "bayanbulak-nine-bends": {
         "CameraProfile": "Adobe Standard",
-        "WhiteBalance": "Custom",
-        "Temperature": "5250",
-        "Tint": "+14",
         "Texture": "+6",
         "Clarity2012": "+4",
         "Dehaze": "+6",
@@ -505,7 +493,7 @@ LR_STYLE_PROFILES: dict[str, dict[str, str]] = {
         "ParametricDarks": "0",
         "ParametricShadows": "0",
         "ToneCurveName2012": "Custom",
-        "ToneCurvePV2012": "0, 0, 66, 59, 125, 125, 182, 188, 255, 255",
+        "ToneCurvePV2012": "2, 5, 66, 59, 125, 125, 182, 188, 255, 250",
         "ToneCurvePV2012Red": "0, 0, 255, 255",
         "ToneCurvePV2012Green": "0, 0, 255, 255",
         "ToneCurvePV2012Blue": "0, 0, 255, 255",
@@ -530,12 +518,25 @@ LR_STYLE_PROFILES: dict[str, dict[str, str]] = {
 }
 
 
+WB_FIELDS = {"WhiteBalance", "Temperature", "Tint"}
 TONE_CURVE_FIELDS = {
     "ToneCurvePV2012",
     "ToneCurvePV2012Red",
     "ToneCurvePV2012Green",
     "ToneCurvePV2012Blue",
 }
+
+
+def _enforce_fixed_lr_rules(fields: dict[str, str]) -> None:
+    for key in WB_FIELDS:
+        fields.pop(key, None)
+    try:
+        vignette = int(fields.get("PostCropVignetteAmount", "0"))
+    except ValueError:
+        fields["PostCropVignetteAmount"] = "0"
+    else:
+        if vignette < -7:
+            fields["PostCropVignetteAmount"] = "-7"
 
 
 def build_lr_xmp_fields(plan: LrPlan, *, style: str = "travel-rich") -> dict[str, str]:
@@ -552,6 +553,7 @@ def build_lr_xmp_fields(plan: LrPlan, *, style: str = "travel-rich") -> dict[str
             "Whites2012": _format_signed_int(plan.whites2012),
             "Blacks2012": _format_signed_int(plan.blacks2012),
             "Contrast2012": _format_signed_int(plan.contrast2012),
+            "ProcessVersion": "15.4",
             "LensProfileEnable": "1",
             "LensProfileSetup": "Auto",
             "LensProfileDistortionScale": "100",
@@ -565,6 +567,7 @@ def build_lr_xmp_fields(plan: LrPlan, *, style: str = "travel-rich") -> dict[str
             "AlreadyApplied": "False",
         }
     )
+    _enforce_fixed_lr_rules(fields)
     return fields
 
 

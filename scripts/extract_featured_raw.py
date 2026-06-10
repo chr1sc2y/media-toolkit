@@ -5,20 +5,20 @@ Final HIF Copier
 This script copies final HIF previews based on Lightroom export contents:
 1. Extract exported file names from raw/Export/ and portrait/*/raw/Export/
 2. Find original HIF previews with matching names in hif/ directories
-3. Copy these matching HIF files to the photo directory's featured/ folder
+3. Copy these matching HIF files to a user-provided destination directory
 
 Supports recursive mode (-r) to process every subdirectory tree that contains its own 'raw' folder.
 
 Usage:
-    python extract_featured_raw.py [directory_path] [--recursive | -r]
+    python extract_featured_raw.py [directory_path] --copy-to /path/to/destination [--recursive | -r]
     
     If no directory is provided, the script will prompt for one interactively.
     With --recursive, it will find and process every subdirectory containing a "raw" folder.
     
 Examples:
-    python extract_featured_raw.py /path/to/photos
-    python extract_featured_raw.py "C:\\Users\\Photos\\Event"
-    python extract_featured_raw.py /path/to/event_root --recursive
+    python extract_featured_raw.py /path/to/photos --copy-to /path/to/destination
+    python extract_featured_raw.py "C:\\Users\\Photos\\Event" --copy-to "E:\\Photos"
+    python extract_featured_raw.py /path/to/event_root --copy-to /path/to/destination --recursive
 """
 
 import argparse
@@ -163,9 +163,9 @@ def get_target_directory():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s /path/to/photos
-  %(prog)s "C:\\Photos\\Event"
-  %(prog)s /path/to/root -r
+  %(prog)s /path/to/photos --copy-to /path/to/destination
+  %(prog)s "C:\\Photos\\Event" --copy-to "E:\\Photos"
+  %(prog)s /path/to/root --copy-to /path/to/destination -r
         """
     )
     parser.add_argument(
@@ -183,7 +183,13 @@ Examples:
         action='store_true',
         help='Recursively find and process all subdirectories (including the target) that contain a "raw" subdirectory'
     )
+    parser.add_argument(
+        "--copy-to",
+        required=True,
+        help="Destination directory for matching original HIF previews.",
+    )
     args = parser.parse_args()
+    destination_dir = _normalize_directory_input(args.copy_to)
     if args.directory:
         # Command line argument provided
         target_dir = _normalize_directory_input(args.directory)
@@ -193,7 +199,7 @@ Examples:
         if not target_dir.is_dir():
             print(f"Error: '{target_dir}' is not a directory.")
             sys.exit(1)
-        return target_dir, args.recursive, target_dir / "featured"
+        return target_dir, args.recursive, destination_dir
     else:
         # Interactive mode: prompt user for directory
         print("Interactive mode: Please specify the target directory.")
@@ -205,11 +211,11 @@ Examples:
             if not user_input:
                 target_dir = Path.cwd()
                 print(f"Using current directory: {target_dir}")
-                return target_dir, args.recursive, target_dir / "featured"
+                return target_dir, args.recursive, destination_dir
             else:
                 target_dir = _normalize_directory_input(raw_input)
                 if target_dir.exists() and target_dir.is_dir():
-                    return target_dir, args.recursive, target_dir / "featured"
+                    return target_dir, args.recursive, destination_dir
                 else:
                     print(f"Error: '{target_dir}' does not exist or is not a directory.")
                     print("Please try again or press Enter to use current directory.")

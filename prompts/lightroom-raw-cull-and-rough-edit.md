@@ -92,7 +92,7 @@ LR 分支默认修正：
 - 启用镜头配置文件矫正。
 - 去除色差。
 - 默认不要自动套用 Upright/Level；由模型查看预览后判断是否需要手动小角度旋转（PerspectiveRotate）来校正明显歪斜的水平线。不要为了水平牺牲重要构图，竖拍和带旋转 Orientation 的照片尤其不要盲目自动 Level。
-- 白平衡在探索阶段可以保持 As Shot；但同一场景/同一天气下的最终候选图必须检查色彩一致性。若相邻候选图因为相机白平衡解释不同而显得不像同一套编辑，应写入统一的 WhiteBalance=Custom、ColorTemperature 和 Tint。阴天新疆草原/河流场景可用 ColorTemperature=5250、Tint=14 作为中性起点，再按画面微调。
+- 白平衡默认保持相机 As Shot，不在 agent-written 粗修 XMP 中写入 `WhiteBalance`、`Temperature` 或 `Tint`。只有用户明确要求某批/某张校正白平衡时才写这些字段。
 - Tamron 50-400mm F4.5-6.3 A067 拍摄的照片可以写入少量基础锐化，因为这支镜头解析力相对一般；其他镜头默认不额外锐化，除非画面明显需要。
 - 普通去杂色通过 Lightroom/ACR 的 Luminance/Color Noise Reduction 元数据滑块实现；这不是 AI Denoise，不会自动生成 DNG。Lightroom 读取元数据后只需要渲染预览，不需要等待额外降噪任务。只有明确使用 Lightroom AI Denoise 时，才需要 Lightroom 执行并等待生成增强文件。
 - ISO >= 800 的照片进行温和去杂色/降噪；ISO 越高降噪越强，同时避免涂抹细节。ISO 100-400 默认只保留 ColorNoiseReduction 基础值，不加或少加 LuminanceSmoothing。
@@ -108,7 +108,8 @@ XMP 写入建议：
 - 去色差字段：AutoLateralCA=1。
 - Upright 字段默认关闭：PerspectiveUpright=Off。只有明确需要校正水平时，写入小幅 PerspectiveRotate；不要批量自动 Level。
 - 三原色校准使用温和起点，并按题材调整；优先微调 Hue/Saturation，而不是大幅增加 Vibrance/Saturation。默认 Saturation=0，Vibrance 保持低值或接近 0。
-- 可以写入轻微 S 曲线、Parametric Tone Curve 或参考 Sony ST 的轻点曲线来增加对比和中间调厚度，但幅度要小，避免压死阴影或高光断层。
+- 固定写入轻微 S 形主曲线，左端黑点轻抬、右端白点压低，例如 `ToneCurvePV2012=2,5 / 66,59 / 125,125 / 182,188 / 255,250`。RGB 单通道曲线保持中性，避免压死阴影或高光断层。
+- 裁剪后暗角必须克制，`PostCropVignetteAmount` 不得小于 `-7`；默认 `0`，需要收边时通常 `-3..-5`。
 - Tamron 50-400mm F4.5-6.3 A067 可写入少量 Sharpness/SharpenRadius/SharpenDetail/SharpenEdgeMasking；其他镜头默认不额外锐化。
 - ISO >= 800 的照片可写入更强的 LuminanceSmoothing 和 ColorNoiseReduction。
 
@@ -128,7 +129,7 @@ XMP 写入建议：
 
 后续只有两个用户面对的流程：
 - 初筛：本提示词负责的组织、评级、接触表和默认 LR 粗修；只有明确要求只初筛时才不写 LR 粗修参数。
-- 成片归档：用户在 Lightroom 手工精修并导出最终 JPG 后，运行 `mt finalize <照片目录> --scene <场景类别>`。该流程以 Lightroom 导出文件为最终名单：根目录 `raw/Export/` 和 `portrait/<n>/raw/Export/` 里的文件名 stem 决定要归档哪些原始 HIF；然后从根目录 `hif/` 和 `portrait/<n>/hif/` 复制匹配 HIF 到照片目录自己的 `featured/`。它不复制 Lightroom 导出文件本身，不把 `panorama/<n>/hif/` 里的全景源片 HIF 复制进目标目录，不写本地 style learning 报告。如果最终 `.xmp` 暴露出新的用户风格规律，应直接更新仓库 profile、preset notes、prompt 和记忆。不要把风格学习作为第三个独立流程，也不要再要求用户单独“提取 featured”；以后称为“成片归档”。Lightroom 生成的 `*-Pano.dng` 没有对应 HIF 是正常的，不需要报告为问题。
+- 成片归档：用户在 Lightroom 手工精修并导出最终 JPG 后，运行 `mt finalize <照片目录> --copy-to <SD卡目录> --photos-album Sony --scene <场景类别>`。如果用户没有提供 SD 卡目录，必须先询问，不要猜测。该流程以 Lightroom 导出文件为最终名单：根目录 `raw/Export/` 和 `portrait/<n>/raw/Export/` 里的文件名 stem 决定要归档哪些原始 HIF；然后从根目录 `hif/` 和 `portrait/<n>/hif/` 直接复制匹配 HIF 到用户给出的 SD 卡目录，不再创建中间 `featured/`。复制 HIF 时保留源文件 metadata，不改 EXIF、文件名、时间戳或图片内容，也绝不删除 SD 卡已有内容。它不复制 Lightroom 导出文件到 SD 卡，不把 `panorama/<n>/hif/` 里的全景源片 HIF 复制进目标目录，不写本地 style learning 报告。`--photos-album Sony` 会把 `raw/Export/`、`portrait/<n>/raw/Export/`、`panorama/<n>/raw/Export/` 里的 Lightroom 导出图导入 Apple Photos 的 Sony 相册；新批次先用 `--photos-dry-run` 检查导入清单。注意 `--photos-dry-run` 只阻止 Apple Photos 导入，不会阻止 HIF 复制；如果用户要求“先不要真正归档”，不要执行会复制 HIF 的命令。Photos 导入可能触发 macOS 自动化权限提示，且去重不保证完全可靠。如果最终 `.xmp` 暴露出新的用户风格规律，应直接更新仓库 profile、preset notes、prompt 和记忆。不要把风格学习作为第三个独立流程，也不要再要求用户单独“提取 featured”；以后称为“成片归档”。Lightroom 生成的 `*-Pano.dng` 没有对应 HIF 是正常的，不需要报告为问题。
 ```
 
 ## Usage
