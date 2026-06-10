@@ -33,6 +33,7 @@ mt raw-analyze /path/to/photos --ratings ">=3"
 mt lr-apply /path/to/photos --ratings ">=3" --style flower-rich
 mt styles
 mt styles flower-rich
+mt learn-style /path/to/photos --scene flower-field
 mt rawpy-render /path/to/photos --ratings ">=3"
 mt image-compress /path/to/photos --max-bytes 1048576
 ```
@@ -191,6 +192,7 @@ scripts, and agent instructions.
 | `mt lr-plan` | Suggest Lightroom exposure sliders from RAW histogram evidence. | Uses current directory when no path is passed. |
 | `mt lr-apply` | Write Lightroom rough-edit XMP fields from RAW evidence and scene style profiles. | Uses current directory when no path is passed. |
 | `mt styles` | Show agent-readable Lightroom scene style profiles. | Does not use the current directory as media input. |
+| `mt learn-style` | Read Lightroom final-pick XMP files and summarize scene style evidence. | Read-only; requires `--scene`. |
 | `mt rawpy-render` | Render RAW-derived JPEG inputs for selected candidates. | Uses current directory when no path is passed. |
 | `mt image-compress` | Compress oversized JPG/JPEG files under a byte cap. | Uses current directory when no path is passed. |
 | `mt drone` | Compress drone `.mp4` video with the DJI-oriented preset. | Uses current directory when no path is passed. |

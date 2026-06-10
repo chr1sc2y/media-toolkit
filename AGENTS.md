@@ -51,6 +51,7 @@ wrappers only; do not put new command behavior there.
 | `mt lr-plan` | Suggest Lightroom exposure sliders from RAW histogram evidence. |
 | `mt lr-apply` | Write Lightroom rough-edit XMP fields from RAW evidence and scene style profiles. |
 | `mt styles` | Show agent-readable Lightroom scene style profiles. |
+| `mt learn-style` | Read Lightroom final-pick XMP files and summarize scene style evidence. |
 | `mt rawpy-render` | Render RAW-derived JPEG inputs for selected candidates. |
 | `mt image-compress` | Compress oversized JPG/JPEG files under a maximum byte size. |
 | `mt drone` | Compress drone videos with the existing preset. |
@@ -84,6 +85,9 @@ the read-only status/doctor checks with `mt finalize --dry-run` and reports
 Use `mt styles` or `mt styles <profile> --json` before choosing an LR style
 profile. Keep learned directions scene-specific; do not collapse them into a
 single universal preset.
+Use `mt learn-style <photo-dir> --scene <scene> --json` to inspect final-pick
+XMP evidence before updating repo-level style profiles or memory. This command
+is read-only and must not replace the explicit learning/reporting judgment.
 
 Compatibility short aliases such as `mt o` and `mt loc` exist only as
 interactive shortcuts. Do not use them in documentation or generated

@@ -61,6 +61,7 @@
       "name": "Learn refined color style",
       "cn_name": "学习调色",
       "primary_command": "Update repo style profiles, preset notes, prompts, and memory from manual Lightroom refinements.",
+      "inspection_command": "mt learn-style <photo-dir> --scene <scene> --json",
       "source_path_required": true,
       "destination_path_required": false,
       "default_behavior": "Extract durable scene-specific style lessons from manually refined XMP/export evidence and fold them back into repository knowledge.",

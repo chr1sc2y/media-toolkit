@@ -30,6 +30,7 @@ mt doctor <photo-dir> --workflow finalize --copy-to <destination-dir>
 mt preflight-run finalize <photo-dir> --copy-to <destination-dir> --scene <scene>
 mt styles
 mt styles <profile> --json
+mt learn-style <photo-dir> --scene <scene> --json
 ```
 
 `mt status --json` and `mt doctor --json` return a `status` field:
@@ -68,6 +69,7 @@ Package command modules:
 - `mt lr-plan`
 - `mt lr-apply`
 - `mt styles`
+- `mt learn-style`
 - `mt rawpy-render`
 - `mt image-compress`
 - `mt drone`

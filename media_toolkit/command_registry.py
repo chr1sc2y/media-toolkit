@@ -202,6 +202,15 @@ COMMANDS = (
         module_name="media_toolkit.commands.styles",
     ),
     Command(
+        canonical="learn-style",
+        aliases=("learn",),
+        script_name="learn_style.py",
+        help="Read Lightroom final-pick XMP files and summarize scene style evidence.",
+        module_name="media_toolkit.commands.learn_style",
+        default_cwd=True,
+        options_with_values=("--scene",),
+    ),
+    Command(
         canonical="rawpy-render",
         aliases=(),
         script_name="rawpy_render.py",

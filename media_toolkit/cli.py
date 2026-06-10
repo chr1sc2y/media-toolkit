@@ -158,6 +158,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "  mt preflight-run finalize /path/to/photos --copy-to /Volumes/SDCARD/DCIM/100MSDCF --scene grassland\n"
             "  mt lr-apply --style flower-rich\n"
             "  mt styles flower-rich\n"
+            "  mt learn-style /path/to/photos --scene flower-field\n"
             "  mt workflows finalize"
         ),
     )
