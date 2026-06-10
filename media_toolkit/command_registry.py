@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Iterable
 
 
 @dataclass(frozen=True)
@@ -266,11 +266,44 @@ COMMANDS = (
 )
 
 
-ALIASES = {
-    alias: command
-    for command in COMMANDS
-    for alias in (command.canonical, *command.aliases)
-}
+def validate_command_registry(commands: Iterable[Command] = COMMANDS) -> None:
+    seen: dict[str, str] = {}
+    for command in commands:
+        if not command.canonical:
+            raise ValueError("command is missing canonical name")
+        if command.visible:
+            for field, value in (
+                ("script_name", command.script_name),
+                ("help", command.help),
+                ("module_name", command.module_name),
+            ):
+                if not value:
+                    raise ValueError(f"command {command.canonical} is missing {field}")
+        for option in command.options_with_values:
+            if not option.startswith("--"):
+                raise ValueError(
+                    f"command {command.canonical} has non-long option {option}"
+                )
+        for name in (command.canonical, *command.aliases):
+            previous = seen.get(name)
+            if previous is not None:
+                raise ValueError(
+                    f"command name or alias {name} is used by both "
+                    f"{previous} and {command.canonical}"
+                )
+            seen[name] = command.canonical
+
+
+def _build_aliases(commands: Iterable[Command]) -> dict[str, Command]:
+    validate_command_registry(commands)
+    return {
+        alias: command
+        for command in commands
+        for alias in (command.canonical, *command.aliases)
+    }
+
+
+ALIASES = _build_aliases(COMMANDS)
 
 
 def resolve_command(name: str) -> Command:

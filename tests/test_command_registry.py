@@ -2,7 +2,13 @@ import ast
 import unittest
 from pathlib import Path
 
-from media_toolkit.command_registry import list_commands, command_registry_dict, resolve_command
+from media_toolkit.command_registry import (
+    Command,
+    command_registry_dict,
+    list_commands,
+    resolve_command,
+    validate_command_registry,
+)
 
 
 class CommandRegistryTest(unittest.TestCase):
@@ -24,8 +30,24 @@ class CommandRegistryTest(unittest.TestCase):
 
         self.assertEqual(command.module_name, "media_toolkit.commands.commands")
 
+    def test_registry_validation_rejects_duplicate_aliases(self):
+        commands = [
+            Command("one", ("shared",), "one.py", "one", "media_toolkit.commands.one"),
+            Command("two", ("shared",), "two.py", "two", "media_toolkit.commands.two"),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "shared"):
+            validate_command_registry(commands)
+
+    def test_registry_validation_accepts_current_commands(self):
+        validate_command_registry(list_commands())
+
     def test_visible_commands_have_package_modules(self):
-        missing = [command.canonical for command in list_commands(visible_only=True) if not command.module_name]
+        missing = [
+            command.canonical
+            for command in list_commands(visible_only=True)
+            if not command.module_name
+        ]
 
         self.assertEqual(missing, [])
 
