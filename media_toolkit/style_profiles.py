@@ -56,6 +56,12 @@ def lr_style_profiles() -> dict[str, dict[str, str]]:
     }
 
 
+def lr_plan_styles_by_xmp_style() -> dict[str, str]:
+    return {
+        profile["id"]: profile["plan_style"] for profile in list_style_profiles()
+    }
+
+
 def render_style_summary() -> str:
     lines = ["Scene style profiles:"]
     for profile in list_style_profiles():

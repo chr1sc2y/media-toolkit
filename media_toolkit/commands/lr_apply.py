@@ -5,14 +5,13 @@ import sys
 from pathlib import Path
 
 from media_toolkit import rawpy_tools
+from media_toolkit.style_profiles import (
+    lr_plan_styles_by_xmp_style,
+    style_profile_ids,
+)
 
 
-PLAN_STYLE_BY_XMP_STYLE = {
-    "travel-rich": "travel",
-    "flower-rich": "flower",
-    "sairim-lake-east": "flower",
-    "bayanbulak-nine-bends": "travel",
-}
+PLAN_STYLE_BY_XMP_STYLE = lr_plan_styles_by_xmp_style()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -29,7 +28,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--style",
-        choices=tuple(rawpy_tools.LR_STYLE_PROFILES),
+        choices=style_profile_ids(),
         default="travel-rich",
         help="Scene style profile to write into candidate XMP sidecars.",
     )

@@ -7,6 +7,7 @@ from media_toolkit import rawpy_tools
 from media_toolkit.commands import lr_apply, styles
 from media_toolkit.style_profiles import (
     get_style_profile,
+    lr_plan_styles_by_xmp_style,
     lr_style_profiles,
     list_style_profiles,
     render_style_detail,
@@ -32,6 +33,13 @@ class StyleProfilesTest(unittest.TestCase):
             profiles["bayanbulak-nine-bends"]["CameraProfile"],
             "Adobe Standard",
         )
+
+    def test_registry_is_source_for_lr_plan_style_mapping(self):
+        mapping = lr_plan_styles_by_xmp_style()
+
+        self.assertEqual(mapping, lr_apply.PLAN_STYLE_BY_XMP_STYLE)
+        self.assertEqual(mapping["flower-rich"], "flower")
+        self.assertEqual(mapping["travel-rich"], "travel")
 
     def test_style_detail_mentions_plan_style(self):
         detail = render_style_detail(get_style_profile("flower-rich"))
