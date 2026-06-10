@@ -20,6 +20,8 @@ Quick inspection:
 mt commands
 mt commands finalize
 mt commands --json
+mt self-check
+mt self-check --json
 mt workflows
 mt workflows finalize
 mt workflows --json
@@ -54,6 +56,7 @@ Package command modules:
 - `mt finalize`
 - `mt commands`
 - `mt workflows`
+- `mt self-check`
 - `mt organize`
 - `mt fill-locations`
 - `mt contact-sheet`

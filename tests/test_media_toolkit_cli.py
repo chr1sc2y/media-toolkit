@@ -47,6 +47,7 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("png-to-jpg").script_name, "png_to_jpg.py")
         self.assertEqual(resolve_command("commands").script_name, "commands.py")
         self.assertEqual(resolve_command("workflows").script_name, "workflows.py")
+        self.assertEqual(resolve_command("self-check").script_name, "self_check.py")
 
     def test_featured_compatibility_aliases_are_removed_from_mt(self):
         for name in ("featured", "feature", "f"):
@@ -445,6 +446,7 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIn("mt rawpy-render", table)
         self.assertIn("mt commands", table)
         self.assertIn("mt workflows", table)
+        self.assertIn("mt self-check", table)
         self.assertIsNone(re.search(r"^\s*mt f\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt featured\s", table, re.MULTILINE))
         self.assertIsNone(re.search(r"^\s*mt o\s", table, re.MULTILINE))

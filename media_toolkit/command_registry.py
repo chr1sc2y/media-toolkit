@@ -263,6 +263,13 @@ COMMANDS = (
         help="Show the agent-readable workflow registry.",
         module_name="media_toolkit.commands.workflows",
     ),
+    Command(
+        canonical="self-check",
+        aliases=("doctor-repo",),
+        script_name="self_check.py",
+        help="Run read-only registry and entrypoint health checks.",
+        module_name="media_toolkit.commands.self_check",
+    ),
 )
 
 

@@ -16,6 +16,8 @@ registry when the task maps to a reusable workflow:
 mt commands
 mt commands finalize
 mt commands --json
+mt self-check
+mt self-check --json
 mt workflows
 mt workflows finalize
 mt workflows --json
@@ -58,6 +60,7 @@ wrappers only; do not put new command behavior there.
 | `mt png-to-jpg` | Convert PNG images to JPG. |
 | `mt commands` | Show the agent-readable command registry. |
 | `mt workflows` | Show the agent-readable workflow registry. |
+| `mt self-check` | Run read-only registry and entrypoint health checks. |
 
 Directory-based commands default to the current directory when no path is
 provided. `mt fill-locations` operates on Apple Photos and does not use the

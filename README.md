@@ -16,6 +16,7 @@ After that, run `mt` from any directory:
 mt
 mt commands
 mt commands finalize
+mt self-check
 mt workflows
 mt workflows finalize
 mt finalize /path/to/photos --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --scene flower-field
@@ -49,6 +50,8 @@ Agents should inspect the workflow registry before choosing commands:
 mt commands
 mt commands finalize
 mt commands --json
+mt self-check
+mt self-check --json
 mt workflows
 mt workflows finalize
 mt workflows --json
@@ -199,6 +202,7 @@ scripts, and agent instructions.
 | `mt png-to-jpg` | Convert `.png` images to `.jpg`. | Uses current directory when no path is passed. |
 | `mt commands` | Show the agent-readable command registry. | Does not use the current directory as media input. |
 | `mt workflows` | Show the agent-readable workflow registry. | Does not use the current directory as media input. |
+| `mt self-check` | Run read-only registry and entrypoint health checks. | Does not use the current directory as media input. |
 
 `mt status` and `mt doctor --json` expose the same decision status values:
 
