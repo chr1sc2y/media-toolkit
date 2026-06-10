@@ -6,6 +6,8 @@ from media_toolkit.workflows import (
     list_workflows,
     render_workflow_detail,
     render_workflow_summary,
+    workflow_choices,
+    workflow_ids,
 )
 
 
@@ -18,6 +20,16 @@ class WorkflowsTest(unittest.TestCase):
         self.assertIn("initial-cull", workflow_ids)
         self.assertIn("finalize", workflow_ids)
         self.assertIn("learn-style", workflow_ids)
+
+    def test_workflow_choices_are_registry_derived(self):
+        self.assertEqual(
+            set(workflow_ids()),
+            {"initial-cull", "finalize", "learn-style"},
+        )
+        self.assertEqual(
+            set(workflow_choices(include_auto=True)),
+            {"auto", "initial-cull", "finalize", "learn-style"},
+        )
 
     def test_registry_references_real_mt_commands(self):
         all_text = "\n".join(

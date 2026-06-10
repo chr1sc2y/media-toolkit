@@ -14,7 +14,7 @@ from media_toolkit.final_hif_archive import (
 )
 
 
-WorkflowName = Literal["auto", "initial-cull", "finalize", "learn-style"]
+WorkflowName = str
 Severity = Literal["info", "warning", "error"]
 DecisionStatus = Literal["ready", "blocked", "needs-organize", "needs-lightroom-export"]
 

@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from media_toolkit.workflows import workflow_choices
 from media_toolkit.workflow_doctor import inspect_directory, render_report
 
 
@@ -15,7 +16,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("directory", type=Path, help="Photo directory to inspect.")
     parser.add_argument(
         "--workflow",
-        choices=("auto", "initial-cull", "finalize", "learn-style"),
+        choices=workflow_choices(include_auto=True),
         default="auto",
         help="Workflow-specific checks to run.",
     )

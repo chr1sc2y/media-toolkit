@@ -90,6 +90,17 @@ def get_workflow(workflow_id: str) -> dict[str, Any]:
     raise KeyError(f"unknown workflow: {workflow_id}")
 
 
+def workflow_ids() -> tuple[str, ...]:
+    return tuple(workflow["id"] for workflow in list_workflows())
+
+
+def workflow_choices(*, include_auto: bool = False) -> tuple[str, ...]:
+    choices = workflow_ids()
+    if include_auto:
+        return ("auto", *choices)
+    return choices
+
+
 def render_workflow_summary() -> str:
     lines = ["Agent workflows:"]
     for workflow in list_workflows():
