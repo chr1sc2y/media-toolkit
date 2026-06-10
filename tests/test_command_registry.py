@@ -1,4 +1,5 @@
 import ast
+import importlib
 import unittest
 from pathlib import Path
 
@@ -23,7 +24,10 @@ class CommandRegistryTest(unittest.TestCase):
         self.assertTrue(commands["organize"]["supports_dry_run"])
         self.assertIn("move", commands["organize"]["side_effects"])
         self.assertTrue(commands["fill-locations"]["supports_dry_run"])
-        self.assertIn("optional-photos-update", commands["fill-locations"]["side_effects"])
+        self.assertIn(
+            "optional-photos-update",
+            commands["fill-locations"]["side_effects"],
+        )
 
     def test_commands_entrypoint_is_package_first(self):
         command = resolve_command("commands")
@@ -47,6 +51,27 @@ class CommandRegistryTest(unittest.TestCase):
             command.canonical
             for command in list_commands(visible_only=True)
             if not command.module_name
+        ]
+
+        self.assertEqual(missing, [])
+
+    def test_visible_command_modules_are_importable(self):
+        failures: list[str] = []
+        for command in list_commands(visible_only=True):
+            assert command.module_name is not None
+            try:
+                importlib.import_module(command.module_name)
+            except Exception as exc:
+                failures.append(f"{command.canonical}: {exc}")
+
+        self.assertEqual(failures, [])
+
+    def test_visible_command_scripts_exist(self):
+        scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+        missing = [
+            command.script_name
+            for command in list_commands(visible_only=True)
+            if not (scripts_dir / command.script_name).exists()
         ]
 
         self.assertEqual(missing, [])
