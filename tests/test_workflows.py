@@ -2,6 +2,7 @@ import unittest
 
 from media_toolkit.workflows import (
     get_workflow,
+    load_workflow_registry,
     list_workflows,
     render_workflow_detail,
     render_workflow_summary,
@@ -10,11 +11,23 @@ from media_toolkit.workflows import (
 
 class WorkflowsTest(unittest.TestCase):
     def test_registry_lists_agent_facing_workflows(self):
+        registry = load_workflow_registry()
         workflow_ids = {workflow["id"] for workflow in list_workflows()}
 
+        self.assertEqual(registry["version"], 1)
         self.assertIn("initial-cull", workflow_ids)
         self.assertIn("finalize", workflow_ids)
         self.assertIn("learn-style", workflow_ids)
+
+    def test_registry_references_real_mt_commands(self):
+        all_text = "\n".join(
+            str(value)
+            for workflow in list_workflows()
+            for value in workflow.values()
+        )
+
+        self.assertIn("mt preflight-run", all_text)
+        self.assertIn("mt learn-style", all_text)
 
     def test_finalize_workflow_requires_explicit_external_destination(self):
         workflow = get_workflow("finalize")
