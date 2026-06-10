@@ -7,9 +7,11 @@ from media_toolkit import rawpy_tools
 from media_toolkit.commands import lr_apply, styles
 from media_toolkit.style_profiles import (
     get_style_profile,
+    lr_style_profiles,
     list_style_profiles,
     render_style_detail,
     render_style_summary,
+    style_profile_ids,
 )
 
 
@@ -19,12 +21,24 @@ class StyleProfilesTest(unittest.TestCase):
 
         self.assertEqual(registry_ids, set(rawpy_tools.LR_STYLE_PROFILES))
         self.assertEqual(registry_ids, set(lr_apply.PLAN_STYLE_BY_XMP_STYLE))
+        self.assertEqual(registry_ids, set(style_profile_ids()))
+
+    def test_registry_is_source_for_lr_style_profiles(self):
+        profiles = lr_style_profiles()
+
+        self.assertEqual(profiles, rawpy_tools.LR_STYLE_PROFILES)
+        self.assertEqual(profiles["flower-rich"]["RedSaturation"], "+10")
+        self.assertEqual(
+            profiles["bayanbulak-nine-bends"]["CameraProfile"],
+            "Adobe Standard",
+        )
 
     def test_style_detail_mentions_plan_style(self):
         detail = render_style_detail(get_style_profile("flower-rich"))
 
         self.assertIn("flower-rich", detail)
         self.assertIn("plan style: flower", detail)
+        self.assertIn("xmp fields:", detail)
         self.assertIn("明亮花田旅行", detail)
 
     def test_style_summary_lists_profiles(self):
