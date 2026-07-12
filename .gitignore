@@ -5,3 +5,15 @@ log/
 outputs/
 work/
 *.egg-info/
+build/
+dist/
+.venv/
+venv/
+*.whl
+
+# Personal source data never belongs in this repository.
+Ledger/
+Vault/
+private/
+media_toolkit/travel_spend_charts.py
+scripts/travel_spend_charts.py

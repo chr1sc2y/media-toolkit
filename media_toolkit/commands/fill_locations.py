@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import html
 import json
+import math
+import os
+import re
 import subprocess
 import sys
 import time
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,7 +38,7 @@ SCRIPT_FEATURES = [
     "Choose the closer eligible previous/next source by timestamp.",
     "Use --scan-start with a lookback window for faster incremental planning.",
     "Reuse cached Photos timeline exports unless --force-refresh is provided.",
-    "Write planned locations back to Photos only when --apply or --apply-plan is provided.",
+    "Write locations back to Photos only from an explicitly reviewed --apply-plan JSON file.",
     "Record run timing in stdout, the HTML report, and the run history JSON.",
 ]
 
@@ -309,15 +314,51 @@ def export_timeline_and_missing(
         return timeline_path, missing_path, True
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    script = build_export_timeline_script(timeline_path, missing_path, scan_start, scan_lookback_hours)
-    if scan_start:
-        print(
-            "Scanning Photos timeline and missing locations from "
-            f"{scan_start:%Y-%m-%d %H:%M:%S} with {scan_lookback_hours:g}h lookback..."
+    temporary_paths: list[Path] = []
+    try:
+        for target in (timeline_path, missing_path):
+            descriptor, temporary_name = tempfile.mkstemp(
+                dir=str(work_dir),
+                prefix=f".{target.name}.",
+                suffix=".tmp",
+            )
+            os.close(descriptor)
+            temporary_paths.append(Path(temporary_name))
+
+        temporary_timeline, temporary_missing = temporary_paths
+        script = build_export_timeline_script(
+            temporary_timeline,
+            temporary_missing,
+            scan_start,
+            scan_lookback_hours,
         )
-    else:
-        print("Scanning Photos timeline and missing locations. This can take several minutes...")
-    print(run_osascript(script))
+        if scan_start:
+            print(
+                "Scanning Photos timeline and missing locations from "
+                f"{scan_start:%Y-%m-%d %H:%M:%S} with "
+                f"{scan_lookback_hours:g}h lookback..."
+            )
+        else:
+            print(
+                "Scanning Photos timeline and missing locations. "
+                "This can take several minutes..."
+            )
+        scan_result = run_osascript(script)
+
+        timeline_promoted = False
+        try:
+            os.replace(temporary_timeline, timeline_path)
+            timeline_promoted = True
+            os.replace(temporary_missing, missing_path)
+        except BaseException:
+            if timeline_promoted:
+                timeline_path.unlink(missing_ok=True)
+                missing_path.unlink(missing_ok=True)
+            raise
+        print(scan_result)
+    finally:
+        for temporary_path in temporary_paths:
+            temporary_path.unlink(missing_ok=True)
     return timeline_path, missing_path, False
 
 
@@ -365,6 +406,30 @@ class PlanRow:
 
 
 PLAN_JSON_NAME = "photos_location_fill_plan.json"
+PLAN_TEXT_FIELDS = (
+    "target_id",
+    "target_filename",
+    "target_taken_at",
+    "source_rule",
+    "source_id",
+    "source_filename",
+    "source_taken_at",
+    "latitude",
+    "longitude",
+    "note",
+    "previous_source_id",
+    "previous_source_filename",
+    "previous_source_taken_at",
+    "next_source_id",
+    "next_source_filename",
+    "next_source_taken_at",
+)
+PLAN_MINUTE_FIELDS = (
+    "delta_minutes",
+    "previous_delta_minutes",
+    "next_delta_minutes",
+)
+PLAN_ROW_FIELDS = PLAN_TEXT_FIELDS + PLAN_MINUTE_FIELDS
 
 
 def row_to_json(row: PlanRow) -> dict[str, object]:
@@ -391,18 +456,30 @@ def row_to_json(row: PlanRow) -> dict[str, object]:
     }
 
 
-def row_from_json(data: dict[str, object]) -> PlanRow:
+def row_from_json(data: dict[str, object], *, row_number: int | None = None) -> PlanRow:
+    context = f"plan row {row_number}" if row_number is not None else "plan row"
+    missing = [key for key in PLAN_ROW_FIELDS if key not in data]
+    if missing:
+        raise ValueError(f"{context} is missing field(s): {', '.join(missing)}")
+
     def text(key: str) -> str:
-        value = data.get(key, "")
-        return "" if value is None else str(value)
+        value = data[key]
+        if not isinstance(value, str):
+            raise ValueError(f"{context} field {key} must be a string")
+        return value
 
     def minutes(key: str) -> float | None:
-        value = data.get(key)
-        if value in ("", None):
+        value = data[key]
+        if value is None:
             return None
-        return float(value)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{context} field {key} must be a finite number or null")
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError(f"{context} field {key} must be a finite number or null")
+        return number
 
-    return PlanRow(
+    row = PlanRow(
         target_id=text("target_id"),
         target_filename=text("target_filename"),
         target_taken_at=text("target_taken_at"),
@@ -423,6 +500,43 @@ def row_from_json(data: dict[str, object]) -> PlanRow:
         next_source_taken_at=text("next_source_taken_at"),
         next_delta_minutes=minutes("next_delta_minutes"),
     )
+    _validate_plan_row(row, context=context)
+    return row
+
+
+def _normalized_coordinates(
+    row: PlanRow,
+    *,
+    context: str,
+) -> tuple[str, str] | None:
+    if not row.source_id:
+        if row.latitude or row.longitude:
+            raise ValueError(f"{context} has coordinates without a source_id")
+        return None
+    if row.latitude == "ERROR":
+        if not row.longitude:
+            raise ValueError(f"{context} has an empty source-location error")
+        return None
+    if not row.latitude or not row.longitude:
+        raise ValueError(f"{context} has incomplete coordinates")
+    try:
+        latitude = float(row.latitude)
+        longitude = float(row.longitude)
+    except ValueError as exc:
+        raise ValueError(f"{context} has invalid coordinate text") from exc
+    if not math.isfinite(latitude) or not math.isfinite(longitude):
+        raise ValueError(f"{context} has non-finite coordinates")
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        raise ValueError(f"{context} has out-of-range coordinates")
+    return (format(latitude, ".15g"), format(longitude, ".15g"))
+
+
+def _validate_plan_row(row: PlanRow, *, context: str) -> None:
+    if not row.target_id:
+        raise ValueError(f"{context} has an empty target_id")
+    if not row.target_filename:
+        raise ValueError(f"{context} has an empty target_filename")
+    _normalized_coordinates(row, context=context)
 
 
 def write_plan_json(plans: list[PlanRow], plan_path: Path, source: str) -> Path:
@@ -433,18 +547,43 @@ def write_plan_json(plans: list[PlanRow], plan_path: Path, source: str) -> Path:
         "source": source,
         "rows": [row_to_json(row) for row in plans],
     }
-    plan_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    _atomic_write_text(
+        plan_path,
+        json.dumps(payload, indent=2, ensure_ascii=False),
+    )
     return plan_path
 
 
-def read_plan_json(plan_path: Path) -> list[PlanRow]:
-    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+def _plans_from_payload(payload: object, plan_path: Path) -> list[PlanRow]:
+    if not isinstance(payload, dict):
+        raise ValueError(f"plan top level must be an object: {plan_path}")
     if payload.get("version") != 1:
         raise ValueError(f"unsupported plan version in {plan_path}")
     rows = payload.get("rows")
     if not isinstance(rows, list):
         raise ValueError(f"plan has no rows list: {plan_path}")
-    return [row_from_json(row) for row in rows if isinstance(row, dict)]
+    plans: list[PlanRow] = []
+    target_ids: set[str] = set()
+    for row_number, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise ValueError(f"plan row {row_number} must be an object")
+        plan = row_from_json(row, row_number=row_number)
+        if plan.target_id in target_ids:
+            raise ValueError(f"plan row {row_number} has duplicate target_id: {plan.target_id}")
+        target_ids.add(plan.target_id)
+        plans.append(plan)
+    return plans
+
+
+def read_plan_json_with_sha256(plan_path: Path) -> tuple[list[PlanRow], str]:
+    data = plan_path.read_bytes()
+    payload = json.loads(data.decode("utf-8"))
+    return _plans_from_payload(payload, plan_path), hashlib.sha256(data).hexdigest()
+
+
+def read_plan_json(plan_path: Path) -> list[PlanRow]:
+    plans, _sha256 = read_plan_json_with_sha256(plan_path)
+    return plans
 
 
 def plan_counts(plans: list[PlanRow]) -> dict[str, int | float | None]:
@@ -483,21 +622,61 @@ def plan_examples(plans: list[PlanRow], limit: int = 8) -> list[dict[str, object
     ]
 
 
-def parse_applied_count(applied_result: str) -> int:
+def parse_apply_counts(applied_result: str) -> tuple[int, int]:
     for line in applied_result.splitlines():
         if line.startswith("applied="):
-            value = line.split("=", 1)[1].strip()
             try:
-                return int(value.split(",", 1)[0])
+                match = re.fullmatch(
+                    r"applied=(\d+)(?:,\s*errors=(\d+))?",
+                    line.strip(),
+                )
+                if match is None:
+                    return (0, 1)
+                return (int(match.group(1)), int(match.group(2) or 0))
             except ValueError:
-                return 0
-    return 0
+                return (0, 1)
+    return (0, 1) if applied_result.strip() else (0, 0)
+
+
+def parse_applied_count(applied_result: str) -> int:
+    return parse_apply_counts(applied_result)[0]
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _ensure_directory_writable(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=str(path),
+        prefix=".media-toolkit-write-check.",
+    )
+    os.close(descriptor)
+    Path(temporary_name).unlink()
 
 
 def read_run_history(history_path: Path) -> dict[str, object]:
     if not history_path.exists():
         return {"version": 1, "runs": []}
     payload = json.loads(history_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"unsupported run history format: {history_path}")
     if payload.get("version") != 1 or not isinstance(payload.get("runs"), list):
         raise ValueError(f"unsupported run history format: {history_path}")
     return payload
@@ -514,7 +693,7 @@ def append_run_history(
     history_path.parent.mkdir(parents=True, exist_ok=True)
     history = read_run_history(history_path)
     counts = plan_counts(plans)
-    applied_count = parse_applied_count(timing.applied_result)
+    applied_count, apply_error_count = parse_apply_counts(timing.applied_result)
     run = {
         "started_at": timing.started_at,
         "finished_at": timing.finished_at,
@@ -524,6 +703,7 @@ def append_run_history(
         "mode": mode,
         "applied": bool(timing.applied_result),
         "applied_count": applied_count,
+        "apply_error_count": apply_error_count,
         "apply_result": timing.applied_result.strip(),
         "human_report_path": str(human_report_path),
         "plan_json_path": str(plan_json_path) if plan_json_path else "",
@@ -531,7 +711,10 @@ def append_run_history(
         "examples": plan_examples(plans),
     }
     history["runs"].append(run)  # type: ignore[index]
-    history_path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    _atomic_write_text(
+        history_path,
+        json.dumps(history, indent=2, ensure_ascii=False),
+    )
     return history_path
 
 
@@ -684,8 +867,17 @@ def write_history_report(history_path: Path, output_dir: Path, suffix: str = "")
     html_rows = []
     for index, run in enumerate(rows, 1):
         examples = ", ".join(example.get("filename", "") for example in run.get("examples", [])[:5])
-        status = f"applied {run.get('applied_count', 0)}" if run.get("applied") else "planned only"
-        cls = "warn" if run.get("warnings", 0) else ""
+        apply_errors = int(run.get("apply_error_count", 0) or 0)
+        if run.get("applied") and apply_errors:
+            status = (
+                f"partial failure: applied {run.get('applied_count', 0)}, "
+                f"errors {apply_errors}"
+            )
+        elif run.get("applied"):
+            status = f"applied {run.get('applied_count', 0)}"
+        else:
+            status = "planned only"
+        cls = "warn" if run.get("warnings", 0) or apply_errors else ""
         html_rows.append(
             "<tr class='{cls}'><td>{index}</td><td>{started}</td><td>{mode}</td>"
             "<td>{duration}</td><td>{missing}</td><td>{planned}</td><td>{warnings}</td>"
@@ -722,23 +914,29 @@ th{{position:sticky;top:0;background:#f1f5f9}}.warn{{background:#fff7ed}}td:nth-
 
 
 def apply_plan(plans: list[PlanRow]) -> str:
-    apply_rows = [
-        row
-        for row in plans
-        if row.source_id and row.latitude and row.longitude and row.latitude != "ERROR"
-    ]
+    apply_rows: list[tuple[PlanRow, tuple[str, str]]] = []
+    target_ids: set[str] = set()
+    for row_number, row in enumerate(plans, start=1):
+        context = f"plan row {row_number}"
+        _validate_plan_row(row, context=context)
+        if row.target_id in target_ids:
+            raise ValueError(f"{context} has duplicate target_id: {row.target_id}")
+        target_ids.add(row.target_id)
+        coordinates = _normalized_coordinates(row, context=context)
+        if coordinates is not None:
+            apply_rows.append((row, coordinates))
     if not apply_rows:
         return "applied=0, errors=0"
 
     items = []
-    for row in apply_rows:
+    for row, (latitude, longitude) in apply_rows:
         items.append(
             "{"
             + applescript_quote(row.target_id)
             + ", "
-            + row.latitude
+            + latitude
             + ", "
-            + row.longitude
+            + longitude
             + ", "
             + applescript_quote(row.target_filename)
             + "}"
@@ -747,6 +945,7 @@ def apply_plan(plans: list[PlanRow]) -> str:
         "set fillItems to {" + ", ".join(items) + "}\n"
         + r'''
 set appliedCount to 0
+set errorCount to 0
 set errorText to ""
 
 tell application "Photos"
@@ -759,11 +958,12 @@ tell application "Photos"
       set location of media item id targetId to {latVal, lonVal}
       set appliedCount to appliedCount + 1
     on error errMsg
+      set errorCount to errorCount + 1
       set errorText to errorText & targetName & " | " & targetId & " | " & errMsg & linefeed
     end try
   end repeat
 end tell
-return "applied=" & appliedCount & linefeed & errorText
+return "applied=" & appliedCount & ", errors=" & errorCount & linefeed & errorText
 '''
     )
     return run_osascript(script)
@@ -777,7 +977,11 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--describe", action="store_true", help="print what this script does and exit")
-    parser.add_argument("--apply", action="store_true", help="write planned locations back to Photos")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument(
         "--apply-plan",
         type=Path,
@@ -798,12 +1002,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--start",
         type=parse_date_arg,
-        help="only plan/apply missing items taken at or after this time (YYYY-MM-DD or 'YYYY-MM-DD HH:MM:SS')",
+        help=(
+            "filter generated plan only at or after this inclusive time; "
+            "does not bound the Photos scan"
+        ),
     )
     parser.add_argument(
         "--end",
         type=parse_date_arg,
-        help="only plan/apply missing items taken before this time (YYYY-MM-DD or 'YYYY-MM-DD HH:MM:SS')",
+        help=(
+            "filter generated plan only before this exclusive time; "
+            "does not bound the Photos scan"
+        ),
     )
     parser.add_argument("--work-dir", type=Path, default=DEFAULT_WORK_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -813,16 +1023,32 @@ def main(argv: list[str] | None = None) -> int:
     if args.describe:
         print(script_description())
         return 0
+    if args.apply:
+        print(
+            "Error: combined --apply mode was removed. Run a plan, review its "
+            "JSON, then use --apply-plan <reviewed-plan.json>.",
+            file=sys.stderr,
+        )
+        return 2
 
     started_at = local_timestamp()
     started = time.perf_counter()
     applied_result = ""
     plan_json_path: Path | None = args.apply_plan
     mode = "apply-plan" if args.apply_plan else "plan"
+    history_path = args.work_dir / RUN_HISTORY_NAME
 
     if args.apply_plan:
-        plans = read_plan_json(args.apply_plan)
-        applied_result = apply_plan(plans)
+        try:
+            plans, plan_sha256 = read_plan_json_with_sha256(args.apply_plan)
+            print(f"Plan SHA-256: {plan_sha256}")
+            read_run_history(history_path)
+            _ensure_directory_writable(args.work_dir)
+            _ensure_directory_writable(args.output_dir)
+            applied_result = apply_plan(plans)
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Error: invalid reviewed plan: {exc}", file=sys.stderr)
+            return 2
         reused_cache = True
     else:
         timeline_path, missing_path, reused_cache = export_timeline_and_missing(
@@ -851,10 +1077,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         plan_json_path = write_plan_json(plans, args.work_dir / PLAN_JSON_NAME, source_label)
         print(f"Plan JSON: {plan_json_path}")
-
-        if args.apply:
-            applied_result = apply_plan(plans)
-            mode = "plan-and-apply"
+        plan_sha256 = hashlib.sha256(plan_json_path.read_bytes()).hexdigest()
+        print(f"Plan SHA-256: {plan_sha256}")
 
     elapsed_seconds = time.perf_counter() - started
     timing = RunTiming(
@@ -867,7 +1091,7 @@ def main(argv: list[str] | None = None) -> int:
 
     html_path = args.output_dir / (f"photos_location_fill_plan{args.suffix}.html" if args.suffix else HUMAN_REPORT_NAME)
     history_path = append_run_history(
-        args.work_dir / RUN_HISTORY_NAME,
+        history_path,
         plans,
         timing,
         mode=mode,
@@ -878,7 +1102,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Human report: {html_path}")
     print(f"Run history: {history_path}")
 
-    if args.apply or args.apply_plan:
+    if args.apply_plan:
         print(applied_result)
     else:
         print(
@@ -890,7 +1114,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Duration: {format_duration(timing.elapsed_seconds)}")
     print(f"Cache mode: {timing.cache_mode}")
 
-    return 0
+    _applied_count, apply_error_count = parse_apply_counts(applied_result)
+    return 1 if args.apply_plan and apply_error_count else 0
 
 
 if __name__ == "__main__":

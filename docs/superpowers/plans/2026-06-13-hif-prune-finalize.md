@@ -1,10 +1,20 @@
 # HIF Prune Finalize Implementation Plan
 
+> **Superseded (2026-07-12):** Historical implementation record only. The
+> current plan is `docs/superpowers/plans/2026-07-12-media-toolkit-hardening.md`.
+> Any statement below about default or automatic aggressive deletion is no
+> longer valid; current behavior is plan → review → apply that exact plan with
+> `--confirm-delete`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a dedicated `mt hif-prune` command and wire it into the agent-facing finalized archive workflow.
 
-**Architecture:** Implement reusable pruning logic in `media_toolkit/hif_prune.py`, expose it through `media_toolkit.commands.hif_prune`, register the command in `media_toolkit/command_registry.py`, and update workflow docs to run it after finalization. The command defaults to aggressive deletion, but hard keep rules prevent deleting final picks, RAW-backed HIFs, panorama source HIFs, destination files, or undecodable files.
+**Architecture (superseded):** Implement reusable pruning logic in
+`media_toolkit/hif_prune.py`, expose it through
+`media_toolkit.commands.hif_prune`, and register it in the command registry.
+The current command defaults to planning; deletion requires
+`--mode aggressive --apply-plan <reviewed.json> --confirm-delete`.
 
 **Tech Stack:** Python standard library, Pillow for testable image similarity, existing `mt` command registry and unittest suite.
 
@@ -56,7 +66,9 @@ Run command registry and CLI tests.
 
 - [x] **Step 3: Implement command wrapper**
 
-Add CLI parsing for `--mode`, `--scene`, `--manifest`, and `--dry-run`, defaulting to aggressive mode.
+Add CLI parsing for `--mode`, `--scene`, `--manifest`, and `--dry-run`. Current
+behavior defaults to plan mode and requires `--apply-plan` plus
+`--confirm-delete` for aggressive mode.
 
 - [x] **Step 4: Verify command tests pass**
 
@@ -72,7 +84,8 @@ Run command registry and CLI tests again.
 
 - [x] **Step 1: Write failing workflow test**
 
-Assert finalize workflow text mentions `mt hif-prune` and aggressive HIF cleanup.
+Assert finalize workflow text says HIF cleanup is separately requested and
+starts with a non-destructive plan.
 
 - [x] **Step 2: Update workflow registry and docs**
 
@@ -94,4 +107,3 @@ Expected: all tests pass.
 Run: `python3 -m unittest discover -s tests`
 
 Expected: all tests pass.
-

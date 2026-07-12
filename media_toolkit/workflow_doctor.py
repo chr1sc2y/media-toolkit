@@ -12,13 +12,13 @@ from media_toolkit.final_hif_archive import (
     matching_hif_files,
     selected_export_stems,
 )
+from media_toolkit.rawpy_tools import RAW_EXTS
 
 
 WorkflowName = str
 Severity = Literal["info", "warning", "error"]
 DecisionStatus = Literal["ready", "blocked", "needs-organize", "needs-lightroom-export"]
 
-RAW_EXTS = {".arw", ".dng", ".cr2", ".cr3", ".nef", ".raf", ".rw2"}
 HIF_EXTS = {".hif", ".heif", ".heic"}
 EXPORT_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png"}
 
@@ -175,7 +175,9 @@ def recommend_next_steps(report: DoctorReport) -> list[str]:
     recommendations: list[str] = []
 
     if report.status == "needs-organize":
-        recommendations.append(f"Run `mt organize {path} --dry-run` before moving files.")
+        recommendations.append(
+            f"Run `mt organize {path} --dry-run --verbose` before moving files."
+        )
     elif report.status == "needs-lightroom-export":
         recommendations.append(
             "Export final picks from Lightroom into raw/Export or portrait/<n>/raw/Export, then rerun `mt status --workflow finalize`."

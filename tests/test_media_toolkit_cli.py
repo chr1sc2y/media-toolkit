@@ -39,6 +39,7 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("preflight-run").script_name, "preflight_run.py")
         self.assertEqual(resolve_command("batch-report").script_name, "batch_report.py")
         self.assertEqual(resolve_command("raw-analyze").script_name, "raw_analyze.py")
+        self.assertEqual(resolve_command("ratings-apply").script_name, "ratings_apply.py")
         self.assertEqual(resolve_command("lr-plan").script_name, "lr_plan.py")
         self.assertEqual(resolve_command("lr-apply").script_name, "lr_apply.py")
         self.assertEqual(resolve_command("styles").script_name, "styles.py")
@@ -265,6 +266,19 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIsNone(argv)
         self.assertIn("directory required", stderr.getvalue())
 
+    def test_ratings_apply_value_options_do_not_count_as_directory(self):
+        command = resolve_command("ratings-apply")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--manifest", "/tmp/ratings.tsv"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
     def test_hif_prune_value_options_do_not_count_as_directory(self):
         command = resolve_command("hif-prune")
         stderr = StringIO()
@@ -408,6 +422,10 @@ class MediaToolkitCliTest(unittest.TestCase):
             "media_toolkit.commands.lr_plan",
         )
         self.assertEqual(
+            resolve_command("ratings-apply").module_name,
+            "media_toolkit.commands.ratings_apply",
+        )
+        self.assertEqual(
             resolve_command("lr-apply").module_name,
             "media_toolkit.commands.lr_apply",
         )
@@ -454,6 +472,7 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertIn("mt batch-report", table)
         self.assertIn("mt raw-analyze", table)
         self.assertIn("mt lr-plan", table)
+        self.assertIn("mt ratings-apply", table)
         self.assertIn("mt lr-apply", table)
         self.assertIn("mt styles", table)
         self.assertIn("mt learn-style", table)

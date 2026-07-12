@@ -129,7 +129,15 @@ def main(argv: list[str] | None = None) -> int:
     changed = 0
     failed: list[Path] = []
     for image in oversized:
-        ok, before, after = compress_one(ffmpeg, image, args.max_bytes)
+        try:
+            ok, before, after = compress_one(ffmpeg, image, args.max_bytes)
+        except subprocess.CalledProcessError as exc:
+            failed.append(image)
+            print(
+                f"failed {image} (ffmpeg exit {exc.returncode})",
+                file=sys.stderr,
+            )
+            continue
         if ok:
             changed += 1
             print(f"compressed {image} {before} -> {after}")

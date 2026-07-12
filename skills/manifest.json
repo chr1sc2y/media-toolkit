@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "initial-cull",
+      "path": "skills/initial-cull"
+    },
+    {
+      "name": "extract-feature",
+      "path": "skills/extract-feature"
+    },
+    {
+      "name": "learn-color-style",
+      "path": "skills/learn-color-style"
+    },
+    {
+      "name": "apple-photos-location-fill",
+      "path": "skills/apple-photos-location-fill"
+    }
+  ]
+}

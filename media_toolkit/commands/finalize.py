@@ -10,6 +10,8 @@ from media_toolkit.finalize_workflow import (
     copy_destination_is_inside_source,
     finalize_directory,
     find_finalize_directories,
+    find_photos_import_directories,
+    is_panorama_finalize_directory,
 )
 from media_toolkit.photos_import import (
     build_photos_import_script,
@@ -92,34 +94,51 @@ def main(argv: list[str] | None = None) -> int:
             print("Error: --copy-to is required for the HIF archive.", file=sys.stderr)
             return 2
 
+    assert copy_to is not None
+    destination = copy_to.expanduser().resolve()
+    if copy_destination_is_inside_source(root, destination):
+        print(
+            "Error: --copy-to must be outside the source photo directory. "
+            "Provide an explicit archive destination such as /Volumes/SD/DCIM/101MSDCF.",
+            file=sys.stderr,
+        )
+        return 2
+
     if args.recursive:
         bases = find_finalize_directories(root)
-        if not bases:
+        photos_bases = find_photos_import_directories(root)
+        if not bases and (args.hif_only or not photos_bases):
             print("No directories with raw/ found.", file=sys.stderr)
             return 1
     else:
-        bases = [root]
+        bases = [] if is_panorama_finalize_directory(root) else [root]
+        photos_bases = [root]
+        if not bases and args.hif_only:
+            print("Panorama source HIF files cannot be archived.", file=sys.stderr)
+            return 1
 
-    assert copy_to is not None
-    destination = copy_to.expanduser().resolve()
-    for base in bases:
-        if copy_destination_is_inside_source(base, destination):
-            print(
-                "Error: --copy-to must be outside the source photo directory. "
-                "Provide an explicit archive destination such as /Volumes/SD/DCIM/101MSDCF.",
-                file=sys.stderr,
-            )
-            return 2
-
-    success = True
-    for base in bases:
-        if not finalize_directory(
-            base,
-            copy_to=copy_to,
-            scene=args.scene,
-            photos_album=None if args.hif_only else args.photos_album,
-            photos_dry_run=args.photos_dry_run,
+    print(f"Finalizing scene: {args.scene}")
+    if bases:
+        archive_plan = final_hif_archive.build_archive_plan(
+            bases,
+            destination,
+            source_root=root,
+        )
+        success = final_hif_archive.execute_archive_plan(
+            archive_plan,
             dry_run=args.dry_run,
-        ):
-            success = False
+        )
+    else:
+        success = True
+
+    if not args.hif_only:
+        photos_preview = args.photos_dry_run or args.dry_run
+        if success or photos_preview:
+            for base in photos_bases:
+                if not import_exports_to_photos(
+                    base,
+                    album=args.photos_album,
+                    dry_run=photos_preview,
+                ):
+                    success = False
     return 0 if success else 1

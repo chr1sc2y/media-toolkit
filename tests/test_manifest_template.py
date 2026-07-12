@@ -27,6 +27,48 @@ class ManifestTemplateTest(unittest.TestCase):
         self.assertEqual(result.raw_only, ["DSC0002"])
         self.assertEqual(result.hif_only, [])
 
+    def test_collect_paired_stems_accepts_case_insensitive_heif_extensions(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "raw").mkdir()
+            (root / "hif").mkdir()
+            (root / "raw/DSC0001.arw").write_text("raw", encoding="utf-8")
+            (root / "hif/DSC0001.heic").write_text("heif", encoding="utf-8")
+
+            result = manifest_template.collect_paired_stems(root)
+
+        self.assertEqual(result.paired, ["DSC0001"])
+        self.assertEqual(result.raw_only, [])
+        self.assertEqual(result.hif_only, [])
+
+    def test_collect_paired_stems_accepts_supported_non_sony_raw_extensions(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "raw").mkdir()
+            (root / "hif").mkdir()
+            (root / "raw/FUJI0001.RAF").write_text("raw", encoding="utf-8")
+            (root / "hif/FUJI0001.HEIF").write_text("heif", encoding="utf-8")
+
+            result = manifest_template.collect_paired_stems(root)
+
+        self.assertEqual(result.paired, ["FUJI0001"])
+        self.assertEqual(result.raw_only, [])
+        self.assertEqual(result.hif_only, [])
+
+    def test_collect_paired_stems_uses_the_complete_supported_raw_registry(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "raw").mkdir()
+            (root / "hif").mkdir()
+            (root / "raw/SIGMA0001.X3F").write_text("raw", encoding="utf-8")
+            (root / "hif/SIGMA0001.HIF").write_text("hif", encoding="utf-8")
+
+            result = manifest_template.collect_paired_stems(root)
+
+        self.assertEqual(result.paired, ["SIGMA0001"])
+        self.assertEqual(result.raw_only, [])
+        self.assertEqual(result.hif_only, [])
+
     def test_default_manifest_path_uses_kind_directory(self):
         root = Path("/photos/shoot")
 

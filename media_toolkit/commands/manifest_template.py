@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from media_toolkit.manifest_organize import read_manifest
+from media_toolkit.manifest_organize import RAW_EXTENSIONS, read_manifest
 
 
 class PairResult:
@@ -50,9 +50,19 @@ def stems_for(directory: Path, pattern: str) -> set[str]:
     return {path.stem for path in directory.glob(pattern) if path.is_file()}
 
 
+def stems_for_extensions(directory: Path, extensions: set[str]) -> set[str]:
+    if not directory.exists():
+        return set()
+    return {
+        path.stem
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix.casefold() in extensions
+    }
+
+
 def collect_paired_stems(root: Path) -> PairResult:
-    raw_stems = stems_for(root / "raw", "*.ARW")
-    hif_stems = stems_for(root / "hif", "*.HIF")
+    raw_stems = stems_for_extensions(root / "raw", RAW_EXTENSIONS)
+    hif_stems = stems_for_extensions(root / "hif", {".hif", ".heif", ".heic"})
     paired = sorted(raw_stems & hif_stems)
     raw_only = sorted(raw_stems - hif_stems)
     hif_only = sorted(hif_stems - raw_stems)

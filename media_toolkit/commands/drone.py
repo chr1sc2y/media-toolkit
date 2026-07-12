@@ -39,7 +39,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        traverse(str(directory), ".mp4", compress_drone_video, "1920:1080", "15M", None)
+        succeeded, failed = traverse(
+            str(directory),
+            ".mp4",
+            compress_drone_video,
+            "1920:1080",
+            "15M",
+            None,
+        )
+        if failed:
+            print(
+                f"\nProcessing completed with failures: "
+                f"succeeded={succeeded} failed={failed}.",
+                file=sys.stderr,
+            )
+            return 1
         print("\nProcessing completed.")
         return 0
     except KeyboardInterrupt:

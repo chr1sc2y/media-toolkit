@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import csv
-import html
+import io
 import math
+import os
 import re
+import tempfile
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -20,11 +23,50 @@ RAW_EXTS = {
     ".cr2",
     ".cr3",
     ".dng",
+    ".erf",
+    ".iiq",
     ".nef",
+    ".nrw",
     ".orf",
+    ".pef",
     ".raf",
     ".raw",
     ".rw2",
+    ".rwl",
+    ".srw",
+    ".x3f",
+}
+
+XMPMETA_NS = "adobe:ns:meta/"
+RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+XMP_NS = "http://ns.adobe.com/xap/1.0/"
+CRS_NS = "http://ns.adobe.com/camera-raw-settings/1.0/"
+PHOTOSHOP_NS = "http://ns.adobe.com/photoshop/1.0/"
+DC_NS = "http://purl.org/dc/elements/1.1/"
+XMPMM_NS = "http://ns.adobe.com/xap/1.0/mm/"
+
+XMP_NAMESPACES = {
+    "x": XMPMETA_NS,
+    "rdf": RDF_NS,
+    "xmp": XMP_NS,
+    "crs": CRS_NS,
+    "photoshop": PHOTOSHOP_NS,
+    "dc": DC_NS,
+    "xmpMM": XMPMM_NS,
+}
+
+for _prefix, _uri in XMP_NAMESPACES.items():
+    ET.register_namespace(_prefix, _uri)
+
+RAW_XMP_FORMATS = {
+    ".arw": "image/x-sony-arw",
+    ".cr2": "image/x-canon-cr2",
+    ".cr3": "image/x-canon-cr3",
+    ".dng": "image/x-adobe-dng",
+    ".nef": "image/x-nikon-nef",
+    ".orf": "image/x-olympus-orf",
+    ".raf": "image/x-fuji-raf",
+    ".rw2": "image/x-panasonic-rw2",
 }
 
 
@@ -60,6 +102,7 @@ class LrPlan:
     blacks2012: int
     contrast2012: int
     rationale: str
+    plan_style: str = "travel"
 
 
 def _default_imread():
@@ -252,7 +295,7 @@ def _shadow_value(item: RawStats, style: str, rationale: list[str]) -> int:
 
 def build_lr_plans(
     stats: list[RawStats],
-    ratings: dict[str, int | None] | None = None,
+    ratings: dict[object, int | None] | None = None,
     *,
     style: str = "travel",
 ) -> list[LrPlan]:
@@ -302,7 +345,7 @@ def build_lr_plans(
             LrPlan(
                 path=item.path,
                 stem=item.stem,
-                rating=ratings.get(item.stem),
+                rating=_rating_for_stats_item(ratings, item),
                 exposure2012=exposure,
                 highlights2012=highlights,
                 shadows2012=shadows,
@@ -310,9 +353,26 @@ def build_lr_plans(
                 blacks2012=blacks,
                 contrast2012=contrast,
                 rationale=", ".join(dict.fromkeys(rationale)) or "raw histogram baseline",
+                plan_style=style,
             )
         )
     return plans
+
+
+def _rating_for_stats_item(
+    ratings: dict[object, int | None],
+    item: RawStats,
+) -> int | None:
+    for key in (
+        item.path.resolve(),
+        item.path,
+        str(item.path.resolve()),
+        str(item.path),
+        item.stem,
+    ):
+        if key in ratings:
+            return ratings[key]
+    return None
 
 
 def write_lr_plan_tsv(output: Path, plans: list[LrPlan], *, root: Path) -> None:
@@ -321,6 +381,7 @@ def write_lr_plan_tsv(output: Path, plans: list[LrPlan], *, root: Path) -> None:
         "path",
         "stem",
         "rating",
+        "plan_style",
         "Exposure2012",
         "Highlights2012",
         "Shadows2012",
@@ -342,6 +403,7 @@ def write_lr_plan_tsv(output: Path, plans: list[LrPlan], *, root: Path) -> None:
                     "path": str(rel_path),
                     "stem": item.stem,
                     "rating": "" if item.rating is None else item.rating,
+                    "plan_style": item.plan_style,
                     "Exposure2012": f"{item.exposure2012:.2f}",
                     "Highlights2012": item.highlights2012,
                     "Shadows2012": item.shadows2012,
@@ -351,6 +413,173 @@ def write_lr_plan_tsv(output: Path, plans: list[LrPlan], *, root: Path) -> None:
                     "rationale": item.rationale,
                 }
             )
+
+
+LR_PLAN_FIELDS = (
+    "path",
+    "stem",
+    "rating",
+    "plan_style",
+    "Exposure2012",
+    "Highlights2012",
+    "Shadows2012",
+    "Whites2012",
+    "Blacks2012",
+    "Contrast2012",
+    "rationale",
+)
+
+
+def resolve_raw_path(root: Path, value: str, *, context: str) -> Path:
+    root = Path(root).resolve()
+    relative = Path(value)
+    if not value.strip() or relative.is_absolute():
+        raise ValueError(f"{context}: RAW path is outside the shoot directory: {value!r}")
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            f"{context}: RAW path is outside the shoot directory: {value!r}"
+        ) from exc
+    if not candidate.is_file():
+        raise ValueError(f"{context}: RAW file does not exist: {value!r}")
+    if candidate.suffix.lower() not in RAW_EXTS:
+        raise ValueError(f"{context}: unsupported RAW file extension: {value!r}")
+    return candidate
+
+
+def _plan_number(
+    row: dict[str, str],
+    field: str,
+    *,
+    line_number: int,
+    integer: bool,
+) -> float | int:
+    value = (row.get(field) or "").strip()
+    try:
+        parsed = int(value) if integer else float(value)
+    except ValueError as exc:
+        kind = "integer" if integer else "number"
+        raise ValueError(f"plan row {line_number}: {field} must be a {kind}") from exc
+    if not math.isfinite(float(parsed)):
+        raise ValueError(f"plan row {line_number}: {field} must be finite")
+    minimum, maximum = (-100, 100) if integer else (-5.0, 5.0)
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(
+            f"plan row {line_number}: {field} must be between {minimum} and {maximum}"
+        )
+    return parsed
+
+
+def read_lr_plan_tsv(path: Path, *, root: Path) -> list[LrPlan]:
+    plan_path = Path(path)
+    if not plan_path.is_file():
+        raise ValueError(f"LR plan does not exist: {plan_path}")
+
+    plans: list[LrPlan] = []
+    seen: set[Path] = set()
+    with plan_path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        missing = [field for field in LR_PLAN_FIELDS if field not in (reader.fieldnames or [])]
+        if missing:
+            raise ValueError(f"LR plan is missing column(s): {', '.join(missing)}")
+        for line_number, row in enumerate(reader, start=2):
+            raw_file = resolve_raw_path(
+                root,
+                row.get("path") or "",
+                context=f"plan row {line_number}",
+            )
+            if raw_file in seen:
+                raise ValueError(f"plan row {line_number}: duplicate RAW path: {row.get('path')!r}")
+            seen.add(raw_file)
+
+            stem = (row.get("stem") or "").strip()
+            if stem != raw_file.stem:
+                raise ValueError(
+                    f"plan row {line_number}: stem {stem!r} does not match {raw_file.stem!r}"
+                )
+            rating_text = (row.get("rating") or "").strip()
+            if rating_text:
+                try:
+                    rating = int(rating_text)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"plan row {line_number}: rating must be an integer from 0 to 5"
+                    ) from exc
+                if not 0 <= rating <= 5:
+                    raise ValueError(
+                        f"plan row {line_number}: rating must be an integer from 0 to 5"
+                    )
+            else:
+                rating = None
+
+            plan_style = (row.get("plan_style") or "").strip()
+            if plan_style not in {"travel", "flower"}:
+                raise ValueError(
+                    f"plan row {line_number}: plan_style must be travel or flower"
+                )
+
+            plans.append(
+                LrPlan(
+                    path=raw_file,
+                    stem=stem,
+                    rating=rating,
+                    exposure2012=float(
+                        _plan_number(
+                            row,
+                            "Exposure2012",
+                            line_number=line_number,
+                            integer=False,
+                        )
+                    ),
+                    highlights2012=int(
+                        _plan_number(
+                            row,
+                            "Highlights2012",
+                            line_number=line_number,
+                            integer=True,
+                        )
+                    ),
+                    shadows2012=int(
+                        _plan_number(
+                            row,
+                            "Shadows2012",
+                            line_number=line_number,
+                            integer=True,
+                        )
+                    ),
+                    whites2012=int(
+                        _plan_number(
+                            row,
+                            "Whites2012",
+                            line_number=line_number,
+                            integer=True,
+                        )
+                    ),
+                    blacks2012=int(
+                        _plan_number(
+                            row,
+                            "Blacks2012",
+                            line_number=line_number,
+                            integer=True,
+                        )
+                    ),
+                    contrast2012=int(
+                        _plan_number(
+                            row,
+                            "Contrast2012",
+                            line_number=line_number,
+                            integer=True,
+                        )
+                    ),
+                    rationale=(row.get("rationale") or "").strip(),
+                    plan_style=plan_style,
+                )
+            )
+    if not plans:
+        raise ValueError("LR plan contains no rows")
+    return plans
 
 
 def _format_signed_int(value: int) -> str:
@@ -409,68 +638,212 @@ def build_lr_xmp_fields(plan: LrPlan, *, style: str = "travel-rich") -> dict[str
             "LensProfileDistortionScale": "100",
             "LensProfileVignettingScale": "100",
             "AutoLateralCA": "1",
-            "PerspectiveUpright": "0",
-            "Sharpness": "40",
-            "LuminanceSmoothing": "0",
-            "ColorNoiseReduction": "25",
             "HasSettings": "True",
             "AlreadyApplied": "False",
         }
     )
     _enforce_fixed_lr_rules(fields)
+    if any(part.casefold() == "panorama" for part in plan.path.parts):
+        fields["PostCropVignetteAmount"] = "0"
     return fields
+
+
+def xmp_format_for_raw(raw_file: Path) -> str:
+    suffix = Path(raw_file).suffix.lower()
+    return RAW_XMP_FORMATS.get(suffix, f"image/x-{suffix.lstrip('.')}")
+
+
+def _split_xmp_packet(text: str) -> tuple[str, str, str]:
+    match = re.search(r"<(?P<prefix>[A-Za-z_][\w.-]*:)?xmpmeta\b", text)
+    if not match:
+        raise ValueError("XMP does not contain an xmpmeta root element")
+    tag = f"{match.group('prefix') or ''}xmpmeta"
+    closing = f"</{tag}>"
+    end = text.find(closing, match.start())
+    if end < 0:
+        raise ValueError("XMP xmpmeta root element is not closed")
+    end += len(closing)
+    return text[: match.start()], text[match.start() : end], text[end:]
+
+
+def _register_document_namespaces(root_text: str) -> None:
+    try:
+        declarations = ET.iterparse(io.StringIO(root_text), events=("start-ns",))
+        for _event, (prefix, uri) in declarations:
+            if prefix == "xml" or re.fullmatch(r"ns\d+", prefix or ""):
+                continue
+            ET.register_namespace(prefix or "", uri)
+    except (ET.ParseError, ValueError) as exc:
+        raise ValueError(f"invalid XMP XML: {exc}") from exc
+
+
+def _parse_xmp(text: str) -> tuple[str, ET.Element, str]:
+    prefix, root_text, suffix = _split_xmp_packet(text)
+    _register_document_namespaces(root_text)
+    try:
+        parser = ET.XMLParser(
+            target=ET.TreeBuilder(insert_comments=True, insert_pis=True)
+        )
+        root = ET.fromstring(root_text, parser=parser)
+    except ET.ParseError as exc:
+        raise ValueError(f"invalid XMP XML: {exc}") from exc
+    return prefix, root, suffix
+
+
+def _new_xmp() -> tuple[str, ET.Element, str]:
+    root = ET.Element(f"{{{XMPMETA_NS}}}xmpmeta")
+    rdf = ET.SubElement(root, f"{{{RDF_NS}}}RDF")
+    ET.SubElement(rdf, f"{{{RDF_NS}}}Description", {f"{{{RDF_NS}}}about": ""})
+    prefix = '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
+    suffix = '\n<?xpacket end="w"?>\n'
+    return prefix, root, suffix
+
+
+def _xmp_description(root: ET.Element) -> ET.Element:
+    rdf = root.find(f"{{{RDF_NS}}}RDF")
+    if rdf is None:
+        rdf = root.find(f".//{{{RDF_NS}}}RDF")
+    if rdf is None:
+        raise ValueError("XMP does not contain rdf:RDF")
+    for child in rdf:
+        if child.tag == f"{{{RDF_NS}}}Description":
+            return child
+    return ET.SubElement(rdf, f"{{{RDF_NS}}}Description", {f"{{{RDF_NS}}}about": ""})
+
+
+def _set_tone_curve(description: ET.Element, key: str, value: str) -> None:
+    tag = f"{{{CRS_NS}}}{key}"
+    description.attrib.pop(tag, None)
+    curve = next((child for child in description if child.tag == tag), None)
+    if curve is None:
+        curve = ET.SubElement(description, tag)
+    else:
+        curve.clear()
+    sequence = ET.SubElement(curve, f"{{{RDF_NS}}}Seq")
+    numbers = [item.strip() for item in value.split(",")]
+    for index in range(0, len(numbers), 2):
+        pair = numbers[index : index + 2]
+        if len(pair) == 2:
+            ET.SubElement(sequence, f"{{{RDF_NS}}}li").text = ", ".join(pair)
+
+
+def _set_scalar_property(description: ET.Element, tag: str, value: str) -> None:
+    for child in list(description):
+        if child.tag == tag:
+            description.remove(child)
+    description.set(tag, value)
+
+
+def _atomic_write_text(output: Path, text: str) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=str(output.parent),
+        prefix=f".{output.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if output.exists():
+            os.chmod(temporary, output.stat().st_mode & 0o777)
+        os.replace(temporary, output)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def write_lr_xmp_sidecar(raw_file: Path, fields: dict[str, str], *, rating: int | None) -> None:
     raw_file = Path(raw_file)
     output = raw_file.with_suffix(".xmp")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    rating_value = "" if rating is None else f' xmp:Rating="{rating}"'
-    crs_attrs = "\n".join(
-        f'   crs:{html.escape(key)}="{html.escape(value, quote=True)}"'
-        for key, value in fields.items()
-        if key not in TONE_CURVE_FIELDS
+    if output.exists():
+        prefix, root, suffix = _parse_xmp(output.read_text(encoding="utf-8", errors="strict"))
+    else:
+        prefix, root, suffix = _new_xmp()
+    description = _xmp_description(root)
+
+    if rating is not None:
+        if not 0 <= rating <= 5:
+            raise ValueError("rating must be an integer from 0 to 5")
+        _set_scalar_property(description, f"{{{XMP_NS}}}Rating", str(rating))
+    for key, value in fields.items():
+        if key in TONE_CURVE_FIELDS:
+            _set_tone_curve(description, key, value)
+        else:
+            _set_scalar_property(description, f"{{{CRS_NS}}}{key}", str(value))
+    _set_scalar_property(
+        description,
+        f"{{{PHOTOSHOP_NS}}}SidecarForExtension",
+        raw_file.suffix.lstrip(".").upper(),
     )
-    curve_blocks = "\n".join(
-        _tone_curve_block(key, value)
-        for key, value in fields.items()
-        if key in TONE_CURVE_FIELDS
+    _set_scalar_property(
+        description,
+        f"{{{DC_NS}}}format",
+        xmp_format_for_raw(raw_file),
     )
-    text = f'''<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/">
- <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-  <rdf:Description rdf:about=""
-   xmlns:xmp="http://ns.adobe.com/xap/1.0/"
-   xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
-   xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
-   xmlns:dc="http://purl.org/dc/elements/1.1/"
-   xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/"{rating_value}
-{crs_attrs}
-   photoshop:SidecarForExtension="{html.escape(raw_file.suffix.lstrip('.').upper(), quote=True)}"
-   dc:format="image/x-sony-arw"
-   xmpMM:PreservedFileName="{html.escape(raw_file.name, quote=True)}">
-{curve_blocks}
-  </rdf:Description>
- </rdf:RDF>
-</x:xmpmeta>
-<?xpacket end="w"?>
-'''
-    output.write_text(text, encoding="utf-8")
+    _set_scalar_property(
+        description,
+        f"{{{XMPMM_NS}}}PreservedFileName",
+        raw_file.name,
+    )
+
+    root_text = ET.tostring(root, encoding="unicode", short_empty_elements=True)
+    _atomic_write_text(output, f"{prefix}{root_text}{suffix}")
 
 
-def _tone_curve_block(key: str, value: str) -> str:
-    numbers = [item.strip() for item in value.split(",")]
-    pairs = [
-        ", ".join(numbers[index : index + 2])
-        for index in range(0, len(numbers), 2)
-        if len(numbers[index : index + 2]) == 2
-    ]
-    items = "\n".join(f"     <rdf:li>{html.escape(pair)}</rdf:li>" for pair in pairs)
-    return f"""   <crs:{html.escape(key)}>
-    <rdf:Seq>
-{items}
-    </rdf:Seq>
-   </crs:{html.escape(key)}>"""
+def write_rating_xmp_sidecar(raw_file: Path, rating: int) -> None:
+    write_lr_xmp_sidecar(
+        raw_file,
+        {"HasSettings": "True", "AlreadyApplied": "False"},
+        rating=rating,
+    )
+
+
+def read_xmp_properties(path: Path) -> dict[str, str]:
+    xmp_path = Path(path)
+    if not xmp_path.is_file():
+        raise ValueError(f"XMP file does not exist: {xmp_path}")
+    _prefix, root, _suffix = _parse_xmp(
+        xmp_path.read_text(encoding="utf-8", errors="strict")
+    )
+    description = _xmp_description(root)
+    properties: dict[str, str] = {}
+    for prefix, namespace in XMP_NAMESPACES.items():
+        if prefix in {"x", "rdf"}:
+            continue
+        for name, value in description.attrib.items():
+            namespace_prefix = f"{{{namespace}}}"
+            if name.startswith(namespace_prefix):
+                properties[f"{prefix}:{name[len(namespace_prefix):]}"] = value
+        for child in description:
+            namespace_prefix = f"{{{namespace}}}"
+            if (
+                isinstance(child.tag, str)
+                and child.tag.startswith(namespace_prefix)
+                and child.text
+            ):
+                key = f"{prefix}:{child.tag[len(namespace_prefix):]}"
+                properties.setdefault(key, child.text.strip())
+    return properties
+
+
+def read_xmp_rating_strict(path: Path) -> int | None:
+    xmp_path = Path(path)
+    if not xmp_path.exists():
+        return None
+    properties = read_xmp_properties(xmp_path)
+    value = properties.get("xmp:Rating")
+    if value is None:
+        return None
+    try:
+        rating = int(value)
+    except ValueError as exc:
+        raise ValueError(f"invalid XMP rating: {value!r}") from exc
+    if not 0 <= rating <= 5:
+        raise ValueError(f"invalid XMP rating: {rating}; expected 0..5")
+    return rating
 
 
 def read_xmp_rating(path: Path) -> int | None:
@@ -534,11 +907,16 @@ def render_raw_to_jpeg(
 ) -> None:
     reader = imread or _default_imread()
     with reader(str(source)) as raw:
-        rgb = raw.postprocess(
+        postprocess_options = dict(
             use_camera_wb=True,
             no_auto_bright=True,
-            output_color=_rawpy_srgb_colorspace(),
             output_bps=8,
         )
+        try:
+            postprocess_options["output_color"] = _rawpy_srgb_colorspace()
+        except ModuleNotFoundError:
+            if imread is None:
+                raise
+        rgb = raw.postprocess(**postprocess_options)
     destination.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(rgb).save(destination, format="JPEG", quality=quality, subsampling=0)

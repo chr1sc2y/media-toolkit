@@ -24,6 +24,17 @@ class WorkflowDoctorTest(unittest.TestCase):
         self.assertTrue(any("mt organize" in item for item in report.recommendations))
         self.assertTrue(any(finding.code == "unorganized-media" for finding in report.findings))
 
+    def test_detects_new_import_for_all_supported_raw_extensions(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "SIGMA0001.X3F").write_text("raw", encoding="utf-8")
+
+            report = inspect_directory(root)
+
+        self.assertEqual(report.inferred_stage, "new-import")
+        self.assertEqual(report.summary["loose_raw"], 1)
+        self.assertEqual(report.status, "needs-organize")
+
     def test_finalize_requires_explicit_copy_to(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

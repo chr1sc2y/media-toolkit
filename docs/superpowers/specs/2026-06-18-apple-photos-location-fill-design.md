@@ -1,5 +1,10 @@
 # Apple Photos Location Fill Design
 
+> **Updated by the 2026-07-12 hardening design:** The workflow remains
+> time-based, but plan parsing and apply are now strict, auditable operations.
+> The canonical Skill lives in this repository rather than a machine-local
+> directory.
+
 ## Goal
 
 Split Apple Photos missing-location repair into an auditable two-stage workflow:
@@ -30,9 +35,11 @@ schema.
 
 ## Skill
 
-Create `apple-photos-location-fill` under `~/.codex/skills`. The skill should
-direct future agents to run the plan stage first, ask the user to review the
-outputs, and only use `--apply-plan` after explicit confirmation.
+Store `apple-photos-location-fill` under
+`skills/apple-photos-location-fill/` and register it with the repository's
+manifest-driven installer. The skill directs future agents to run the plan
+stage first, ask the user to review the outputs, and only use `--apply-plan`
+after explicit confirmation.
 
 ## Validation
 

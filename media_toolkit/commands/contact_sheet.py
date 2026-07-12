@@ -26,12 +26,14 @@ IMAGE_EXTS = {
     ".jpeg",
     ".jpg",
     ".hif",
+    ".heif",
     ".png",
     ".tif",
     ".tiff",
     ".webp",
 }
-TRANSCODE_INPUT_EXTS = {".hif"}
+HIF_EXTS = {".hif", ".heif", ".heic"}
+TRANSCODE_INPUT_EXTS = HIF_EXTS
 FFMPEG_FULL_PATHS = (
     Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"),
     Path("/usr/local/opt/ffmpeg-full/bin/ffmpeg"),
@@ -146,15 +148,26 @@ def collect_images(
     export_only: bool,
     exclude_dirs: list[str],
     hif_only: bool = False,
+    *,
+    exclude_roots: Iterable[Path] = (),
+    exclude_files: Iterable[Path] = (),
 ) -> list[Path]:
     excluded_names = {name.lower() for name in exclude_dirs}
+    excluded_root_paths = tuple(Path(path).resolve() for path in exclude_roots)
+    excluded_file_paths = {Path(path).resolve() for path in exclude_files}
     images = []
 
     for path in root.rglob("*"):
         if not path.is_file():
             continue
+        resolved = path.resolve()
+        if resolved in excluded_file_paths or any(
+            resolved == excluded_root or resolved.is_relative_to(excluded_root)
+            for excluded_root in excluded_root_paths
+        ):
+            continue
         if hif_only:
-            if path.suffix.lower() != ".hif":
+            if path.suffix.lower() not in HIF_EXTS:
                 continue
             if not is_under_hif(path):
                 continue
@@ -528,6 +541,11 @@ def generate_contact_sheets(args) -> int:
     ffmpeg = require_ffmpeg()
     root = Path(args.directory).expanduser().resolve()
     output_dir = Path(args.output).expanduser().resolve()
+    final_overview = (
+        Path(args.final_overview).expanduser().resolve()
+        if args.final_overview
+        else None
+    )
 
     if not root.exists() or not root.is_dir():
         print(f"Error: directory not found: {root}", file=sys.stderr)
@@ -545,7 +563,14 @@ def generate_contact_sheets(args) -> int:
         )
         return 1
 
-    images = collect_images(root, args.export_only, args.exclude_dir, args.hif_only)
+    images = collect_images(
+        root,
+        args.export_only,
+        args.exclude_dir,
+        args.hif_only,
+        exclude_roots=[output_dir],
+        exclude_files=[final_overview] if final_overview is not None else [],
+    )
     if not images:
         print("No images found.")
         return 0
@@ -602,7 +627,7 @@ def generate_contact_sheets(args) -> int:
             rendered_sheets.append((sheet_path, page.title))
 
     if args.final_overview:
-        final_overview = Path(args.final_overview).expanduser().resolve()
+        assert final_overview is not None
         combine_contact_sheets(rendered_sheets, final_overview)
         print(f"Final overview: {final_overview}")
 

@@ -31,6 +31,39 @@ class PanoramaOrganizeTest(unittest.TestCase):
             self.assertTrue((root / "panorama/1/raw/DSC0002.ARW").exists())
             self.assertTrue((root / "panorama/1/hif/DSC0002.HIF").exists())
 
+    def test_plan_accepts_case_insensitive_raw_and_heif_extensions(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "raw").mkdir()
+            (root / "hif").mkdir()
+            (root / "raw/DSC0001.arw").write_text("raw", encoding="utf-8")
+            (root / "hif/DSC0001.heic").write_text("heif", encoding="utf-8")
+
+            operations = panorama_organize.build_move_plan(
+                root, [panorama_organize.ManifestEntry("DSC0001", "1")]
+            )
+            panorama_organize.apply_move_plan(operations)
+
+            self.assertTrue((root / "panorama/1/raw/DSC0001.arw").exists())
+            self.assertTrue((root / "panorama/1/hif/DSC0001.heic").exists())
+
+    def test_plan_moves_supported_non_sony_raw_and_hif_pair(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "raw").mkdir()
+            (root / "hif").mkdir()
+            (root / "raw/FUJI0001.RAF").write_text("raw", encoding="utf-8")
+            (root / "hif/FUJI0001.HEIF").write_text("heif", encoding="utf-8")
+
+            operations = panorama_organize.build_move_plan(
+                root,
+                [panorama_organize.ManifestEntry("FUJI0001", "1")],
+            )
+            panorama_organize.apply_move_plan(operations)
+
+            self.assertTrue((root / "panorama/1/raw/FUJI0001.RAF").exists())
+            self.assertTrue((root / "panorama/1/hif/FUJI0001.HEIF").exists())
+
     def test_rebuild_contact_sheets_rebuilds_root_and_panorama_overviews(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

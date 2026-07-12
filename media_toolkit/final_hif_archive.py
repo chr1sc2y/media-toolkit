@@ -1,14 +1,31 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
-import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from media_toolkit.path_input import normalize_directory_input
 
 EXPORT_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png"}
-HIF_EXTS = {".hif"}
+HIF_EXTS = {".hif", ".heif", ".heic"}
+
+
+@dataclass(frozen=True)
+class HifArchiveItem:
+    source: Path
+    destination: Path
+
+
+@dataclass(frozen=True)
+class HifArchivePlan:
+    source_root: Path
+    base_dirs: tuple[Path, ...]
+    destination_dir: Path
+    copies: tuple[HifArchiveItem, ...]
+    identical_skips: tuple[HifArchiveItem, ...]
+    errors: tuple[str, ...]
 
 
 def destination_is_inside_source(base_dir: Path, destination_dir: Path) -> bool:
@@ -104,6 +121,23 @@ def display_relative(base_dir: Path, path: Path) -> str:
         return str(path)
 
 
+def files_are_byte_identical(left: Path, right: Path) -> bool:
+    try:
+        if left.stat().st_size != right.stat().st_size:
+            return False
+        return _file_digest(left) == _file_digest(right)
+    except OSError:
+        return False
+
+
+def _file_digest(path: Path) -> bytes:
+    digest = hashlib.sha256()
+    with path.open("rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.digest()
+
+
 def _scan_export_stems(export_dir: Path) -> set[str]:
     stems: set[str] = set()
     for file_path in export_dir.iterdir():
@@ -123,12 +157,18 @@ def selected_export_stems(base_dir: Path) -> set[str]:
     return stems
 
 
-def matching_hif_files(base_dir: Path, selected_stems: set[str]) -> dict[str, Path]:
-    matches: dict[str, Path] = {}
+def matching_hif_candidates(
+    base_dir: Path,
+    selected_stems: set[str],
+) -> dict[str, list[Path]]:
+    candidates: dict[str, list[Path]] = {}
     seen_paths: set[Path] = set()
     for search_dir in hif_search_directories(base_dir):
         try:
-            for file_path in search_dir.iterdir():
+            for file_path in sorted(
+                search_dir.iterdir(),
+                key=lambda path: path.name.casefold(),
+            ):
                 if not file_path.is_file():
                     continue
                 stem = file_path.stem.lower()
@@ -136,135 +176,176 @@ def matching_hif_files(base_dir: Path, selected_stems: set[str]) -> dict[str, Pa
                     continue
                 if stem not in selected_stems or file_path.suffix.lower() not in HIF_EXTS:
                     continue
-                if stem in matches:
-                    continue
                 real = file_path.resolve()
                 if real in seen_paths:
                     continue
                 seen_paths.add(real)
-                matches[stem] = file_path
+                candidates.setdefault(stem, []).append(file_path)
         except PermissionError:
             print(f"   Permission denied: {search_dir}")
             continue
-    return matches
+    for paths in candidates.values():
+        paths.sort(key=lambda path: str(path).casefold())
+    return candidates
+
+
+def matching_hif_files(base_dir: Path, selected_stems: set[str]) -> dict[str, Path]:
+    candidates = matching_hif_candidates(base_dir, selected_stems)
+    return {stem: paths[0] for stem, paths in candidates.items() if paths}
+
+
+def build_archive_plan(
+    base_dirs: list[Path],
+    destination_dir: Path,
+    *,
+    source_root: Path | None = None,
+) -> HifArchivePlan:
+    bases = tuple(Path(base).expanduser().resolve() for base in base_dirs)
+    destination = Path(destination_dir).expanduser().resolve()
+    root = (
+        Path(source_root).expanduser().resolve()
+        if source_root is not None
+        else (bases[0] if bases else destination)
+    )
+    copies: list[HifArchiveItem] = []
+    identical_skips: list[HifArchiveItem] = []
+    errors: list[str] = []
+    sources_by_destination_name: dict[str, Path] = {}
+
+    if source_root is not None and destination_is_inside_source(root, destination):
+        errors.append(f"destination is inside source root: {destination}")
+
+    for base in bases:
+        if destination_is_inside_source(base, destination):
+            errors.append(f"destination is inside source base {base}: {destination}")
+            continue
+
+        export_dirs = export_scan_directories(base)
+        if not export_dirs:
+            errors.append(f"no Lightroom export directories found in {base}")
+            continue
+        try:
+            selected_stems = selected_export_stems(base)
+        except PermissionError:
+            errors.append(f"permission denied accessing exports in {base}")
+            continue
+        if not selected_stems:
+            errors.append(f"no valid Lightroom export files found in {base}")
+            continue
+
+        candidates = matching_hif_candidates(base, selected_stems)
+        missing_hif = sorted(selected_stems - set(candidates))
+        if missing_hif:
+            errors.append(
+                f"missing matching HIF files in {base}: {', '.join(missing_hif)}"
+            )
+
+        for stem in sorted(candidates):
+            stem_candidates = candidates[stem]
+            if len(stem_candidates) != 1:
+                errors.append(
+                    f"ambiguous HIF candidates for {stem} in {base}: "
+                    + ", ".join(str(path) for path in stem_candidates)
+                )
+                continue
+            source = stem_candidates[0]
+            destination_name = source.name.casefold()
+            prior_source = sources_by_destination_name.get(destination_name)
+            if prior_source is not None:
+                if not files_are_byte_identical(prior_source, source):
+                    errors.append(
+                        "different source files flatten to the same destination name "
+                        f"{source.name}: {prior_source} and {source}"
+                    )
+                continue
+
+            sources_by_destination_name[destination_name] = source
+            destination_path = destination / source.name
+            item = HifArchiveItem(source=source, destination=destination_path)
+            if destination_path.exists() or destination_path.is_symlink():
+                if files_are_byte_identical(source, destination_path):
+                    identical_skips.append(item)
+                else:
+                    errors.append(
+                        f"destination conflict for {source.name}: {destination_path}"
+                    )
+                continue
+            copies.append(item)
+
+    return HifArchivePlan(
+        source_root=root,
+        base_dirs=bases,
+        destination_dir=destination,
+        copies=tuple(copies),
+        identical_skips=tuple(identical_skips),
+        errors=tuple(errors),
+    )
+
+
+def execute_archive_plan(plan: HifArchivePlan, *, dry_run: bool = False) -> bool:
+    print(f"\n{'='*60}")
+    print("FINAL HIF COPIER")
+    print(f"{'='*60}")
+    print(f"Source root: {plan.source_root}")
+    print(f"Destination directory: {plan.destination_dir}")
+
+    for error in plan.errors:
+        print(f"   Error: {error}")
+    if plan.errors:
+        print(f"   Validation failed: {len(plan.errors)} error(s); no files copied")
+        return False
+
+    if dry_run:
+        for item in plan.copies:
+            print(f"   would copy: {item.source} -> {item.destination}")
+        for item in plan.identical_skips:
+            print(f"   would skip identical: {item.source} -> {item.destination}")
+        print(f"   Would copy: {len(plan.copies)} files")
+        if plan.identical_skips:
+            print(f"   Would skip existing: {len(plan.identical_skips)} files")
+        print(f"   Destination: {plan.destination_dir}")
+        return bool(plan.copies or plan.identical_skips)
+
+    try:
+        plan.destination_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"Error creating destination directory: {exc}")
+        return False
+
+    copied_count = 0
+    skipped_count = len(plan.identical_skips)
+    failed_count = 0
+    for item in plan.copies:
+        try:
+            if item.destination.exists() or item.destination.is_symlink():
+                if files_are_byte_identical(item.source, item.destination):
+                    skipped_count += 1
+                    continue
+                print(f"   Conflict appeared after validation: {item.destination}")
+                failed_count += 1
+                continue
+            shutil.copy2(item.source, item.destination)
+            print(f"   Copied: {item.source}")
+            copied_count += 1
+        except OSError as exc:
+            print(f"   Failed: {item.source.name} - {exc}")
+            failed_count += 1
+
+    print(f"   Successfully copied: {copied_count} files")
+    if skipped_count:
+        print(f"   Skipped duplicates: {skipped_count} files")
+    if failed_count:
+        print(f"   Failed to copy: {failed_count} files")
+    print(f"   Destination: {plan.destination_dir}")
+    return failed_count == 0 and (copied_count > 0 or skipped_count > 0)
 
 
 def process_files(base_dir: Path, destination_dir: Path, *, dry_run: bool = False) -> bool:
     base_dir = Path(base_dir).expanduser().resolve()
     destination_dir = Path(destination_dir).expanduser().resolve()
-    raw_dir = base_dir / "raw"
-    if destination_is_inside_source(base_dir, destination_dir):
-        print(
-            "Error: --copy-to must be outside the source photo directory. "
-            "Provide an explicit archive destination such as /Volumes/SD/DCIM/101MSDCF.",
-            file=sys.stderr,
-        )
-        return False
-
-    print(f"\n{'='*60}")
-    print("FINAL HIF COPIER")
-    print(f"{'='*60}")
-    print(f"Working directory: {base_dir}")
-
-    export_dirs = export_scan_directories(base_dir)
-    if not export_dirs:
-        print(f"\nError: no Lightroom export directories found in '{base_dir}'")
-        return False
-
-    print(f"Raw directory: {raw_dir}")
-    print(f"Destination directory: {destination_dir}")
-    print(f"\n{'Step 1: Scanning Lightroom export directories':-<50}")
-
-    try:
-        selected_stems = selected_export_stems(base_dir)
-    except PermissionError:
-        print(f"Error: Permission denied accessing '{raw_dir}'")
-        return False
-
-    if not selected_stems:
-        print("   Warning: No valid Lightroom export files found.")
-        return False
-
-    print(
-        "   Scanning export directories: "
-        + ", ".join(display_relative(base_dir, directory) for directory in export_dirs)
+    plan = build_archive_plan(
+        [base_dir],
+        destination_dir,
+        source_root=base_dir,
     )
-    print(f"   Total unique exported file names: {len(selected_stems)}")
-
-    print(f"\n{'Step 2: Finding matching files':-<50}")
-    search_dirs = hif_search_directories(base_dir)
-    if search_dirs:
-        print(
-            "   Searching in HIF directories: "
-            + ", ".join(display_relative(base_dir, directory) for directory in search_dirs)
-        )
-    else:
-        print("   Searching in HIF directories: none found")
-
-    matches = matching_hif_files(base_dir, selected_stems)
-    print(f"   Searched directories: {len(search_dirs)}")
-    matching_files = [matches[stem] for stem in sorted(matches)]
-    if not matching_files:
-        print("   Warning: No matching files found in any searched directory.")
-        return False
-
-    for file_path in matching_files:
-        print(f"   Match: {display_relative(base_dir, file_path)}")
-    print(f"   Total matching files: {len(matching_files)}")
-    missing_hif = sorted(selected_stems - set(matches))
-    if missing_hif:
-        print(f"   Missing matching HIF files: {', '.join(missing_hif)}")
-
-    step_title = "Step 3: Dry-run HIF copy plan" if dry_run else "Step 3: Copying files to destination directory"
-    print(f"\n{step_title:-<50}")
-    try:
-        if dry_run:
-            would_copy_count = 0
-            would_skip_count = 0
-            for file_path in matching_files:
-                destination = destination_dir / file_path.name
-                if destination.exists():
-                    action = "would skip existing"
-                    would_skip_count += 1
-                else:
-                    action = "would copy"
-                    would_copy_count += 1
-                print(f"   {action}: {display_relative(base_dir, file_path)} -> {destination}")
-            print(f"\n{'SUMMARY':-<50}")
-            print(f"   Would copy: {would_copy_count} files")
-            if would_skip_count:
-                print(f"   Would skip existing: {would_skip_count} files")
-            print(f"   Destination: {destination_dir}")
-            return True
-
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        print(f"   Directory ready: {destination_dir}")
-
-        copied_count = 0
-        failed_count = 0
-        skipped_count = 0
-        for file_path in matching_files:
-            try:
-                destination = destination_dir / file_path.name
-                if destination.exists():
-                    print(f"   Skipped (already exists): {file_path.name}")
-                    skipped_count += 1
-                    continue
-                shutil.copy2(file_path, destination)
-                print(f"   Copied: {display_relative(base_dir, file_path)}")
-                copied_count += 1
-            except Exception as exc:
-                print(f"   Failed: {file_path.name} - {exc}")
-                failed_count += 1
-
-        print(f"\n{'SUMMARY':-<50}")
-        print(f"   Successfully copied: {copied_count} files")
-        if skipped_count:
-            print(f"   Skipped duplicates: {skipped_count} files")
-        if failed_count:
-            print(f"   Failed to copy: {failed_count} files")
-        print(f"   Destination: {destination_dir}")
-        return copied_count > 0 or (skipped_count > 0 and failed_count == 0)
-    except Exception as exc:
-        print(f"Error creating destination directory: {exc}")
-        return False
+    return execute_archive_plan(plan, dry_run=dry_run)

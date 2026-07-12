@@ -37,5 +37,12 @@ def main(argv: list[str] | None = None) -> int:
     if not directory.is_dir():
         print(f"Error: Path is not a directory: {directory}", file=sys.stderr)
         return 1
-    traverse(str(directory), ".png", compress_image, "iw:ih", "jpg")
-    return 0
+    succeeded, failed = traverse(
+        str(directory),
+        ".png",
+        compress_image,
+        "iw:ih",
+        "jpg",
+    )
+    print(f"converted={succeeded} failed={failed}")
+    return 1 if failed else 0

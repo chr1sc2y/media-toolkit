@@ -1,4 +1,5 @@
 import unittest
+import shutil
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -99,6 +100,85 @@ class OrganizeSonyMediaTest(unittest.TestCase):
             self.assertIn("raw: 1 file", output)
             self.assertIn(str(root / "hif"), output)
             self.assertIn(str(root / "raw"), output)
+
+    def test_verbose_dry_run_prints_every_move_without_changing_files(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            source = root / "DSC0001.HIF"
+            source.write_text("hif", encoding="utf-8")
+
+            stdout = StringIO()
+            with patch("sys.stdout", stdout):
+                exit_code = main([str(root), "--dry-run", "--verbose"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(
+                f"DRY-RUN {source} -> {root / 'hif/DSC0001.HIF'}",
+                stdout.getvalue(),
+            )
+            self.assertTrue(source.exists())
+            self.assertFalse((root / "hif").exists())
+
+    def test_existing_destination_is_hard_conflict_before_any_move(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "raw").mkdir()
+            loose_raw = root / "DSC0001.ARW"
+            loose_hif = root / "DSC0002.HIF"
+            loose_raw.write_text("new raw", encoding="utf-8")
+            loose_hif.write_text("hif", encoding="utf-8")
+            (root / "raw/DSC0001.ARW").write_text("existing raw", encoding="utf-8")
+
+            with self.assertRaisesRegex(FileExistsError, "destination already exists"):
+                organize_directory(root, verbose=False)
+
+            self.assertTrue(loose_raw.exists())
+            self.assertTrue(loose_hif.exists())
+            self.assertFalse((root / "hif/DSC0002.HIF").exists())
+
+    def test_cli_reports_existing_destination_without_traceback(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            (root / "raw").mkdir()
+            (root / "DSC0001.ARW").write_text("new raw", encoding="utf-8")
+            (root / "raw/DSC0001.ARW").write_text(
+                "existing raw", encoding="utf-8"
+            )
+            stderr = StringIO()
+
+            with patch("sys.stderr", stderr):
+                exit_code = main([str(root)])
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("Error: destination already exists", stderr.getvalue())
+
+    def test_move_failure_rolls_back_the_whole_organize_plan(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            first = root / "DSC0001.ARW"
+            second = root / "DSC0001.HIF"
+            first.write_text("raw", encoding="utf-8")
+            second.write_text("hif", encoding="utf-8")
+            real_move = shutil.move
+            calls = 0
+
+            def fail_second_move(source, destination):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("simulated organize failure")
+                return real_move(source, destination)
+
+            with patch(
+                "media_toolkit.commands.organize.shutil.move",
+                side_effect=fail_second_move,
+            ), self.assertRaisesRegex(RuntimeError, "rolled back"):
+                organize_directory(root, verbose=False)
+
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())
+            self.assertFalse((root / "raw/DSC0001.ARW").exists())
+            self.assertFalse((root / "hif/DSC0001.HIF").exists())
 
 
 if __name__ == "__main__":

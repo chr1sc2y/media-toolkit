@@ -17,7 +17,7 @@ PLAN_STYLE_BY_XMP_STYLE = lr_plan_styles_by_xmp_style()
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="mt lr-apply",
-        description="Write Lightroom rough-edit XMP fields from RAW evidence and style profiles.",
+        description="Apply a reviewed LR plan or derive rough-edit XMP from RAW histograms.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("directory", help="Shoot directory to scan")
@@ -33,11 +33,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Scene style profile to write into candidate XMP sidecars.",
     )
     parser.add_argument(
+        "--plan",
+        help="Apply reviewed slider values from an mt lr-plan TSV instead of reanalyzing RAW files.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the RAW files that would be updated without writing XMP.",
     )
     return parser.parse_args(argv)
+
+
+def resolve_plan(root: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else root / path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -47,25 +56,73 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: directory not found: {root}", file=sys.stderr)
         return 1
 
-    try:
-        raw_files = rawpy_tools.collect_raw_files(root, rating_filter=args.ratings)
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 2
-
-    stats = []
-    ratings: dict[str, int | None] = {}
     errors = 0
-    for raw_file in raw_files:
-        ratings[raw_file.stem] = rawpy_tools.read_xmp_rating(raw_file.with_suffix(".xmp"))
+    if args.plan:
+        plan_path = resolve_plan(root, args.plan)
         try:
-            stats.append(rawpy_tools.analyze_raw(raw_file))
-        except Exception as exc:
-            errors += 1
-            print(f"ERROR {raw_file}: {exc}", file=sys.stderr)
+            reviewed_plans = rawpy_tools.read_lr_plan_tsv(plan_path, root=root)
+            expected_plan_style = PLAN_STYLE_BY_XMP_STYLE[args.style]
+            incompatible = [
+                plan
+                for plan in reviewed_plans
+                if plan.plan_style != expected_plan_style
+            ]
+            if incompatible:
+                examples = ", ".join(
+                    str(plan.path.relative_to(root))
+                    for plan in incompatible[:3]
+                )
+                raise ValueError(
+                    f"reviewed plan style is incompatible with XMP profile "
+                    f"{args.style}: expected {expected_plan_style}, found "
+                    f"{incompatible[0].plan_style} ({examples})"
+                )
+            plans = []
+            stale: list[str] = []
+            for plan in reviewed_plans:
+                relative = plan.path.relative_to(root)
+                try:
+                    current_rating = rawpy_tools.read_xmp_rating_strict(
+                        plan.path.with_suffix(".xmp")
+                    )
+                except (OSError, UnicodeError, ValueError) as exc:
+                    raise ValueError(f"{relative}: invalid XMP: {exc}") from exc
+                if current_rating != plan.rating:
+                    stale.append(
+                        f"{relative}: rating changed since plan review "
+                        f"({plan.rating!r} -> {current_rating!r})"
+                    )
+                if rawpy_tools.rating_matches(current_rating, args.ratings):
+                    plans.append(plan)
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        if stale:
+            for message in stale:
+                print(f"Error: {message}", file=sys.stderr)
+            return 2
+    else:
+        try:
+            raw_files = rawpy_tools.collect_raw_files(root, rating_filter=args.ratings)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
 
-    plan_style = PLAN_STYLE_BY_XMP_STYLE[args.style]
-    plans = rawpy_tools.build_lr_plans(stats, ratings, style=plan_style)
+        stats = []
+        ratings: dict[Path, int | None] = {}
+        for raw_file in raw_files:
+            ratings[raw_file.resolve()] = rawpy_tools.read_xmp_rating(
+                raw_file.with_suffix(".xmp")
+            )
+            try:
+                stats.append(rawpy_tools.analyze_raw(raw_file))
+            except Exception as exc:
+                errors += 1
+                print(f"ERROR {raw_file}: {exc}", file=sys.stderr)
+
+        plan_style = PLAN_STYLE_BY_XMP_STYLE[args.style]
+        plans = rawpy_tools.build_lr_plans(stats, ratings, style=plan_style)
+
     for plan in plans:
         try:
             rel_path = plan.path.resolve().relative_to(root)
@@ -74,8 +131,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             print(f"Would write {rel_path}")
             continue
-        fields = rawpy_tools.build_lr_xmp_fields(plan, style=args.style)
-        rawpy_tools.write_lr_xmp_sidecar(plan.path, fields, rating=plan.rating)
+        try:
+            fields = rawpy_tools.build_lr_xmp_fields(plan, style=args.style)
+            rawpy_tools.write_lr_xmp_sidecar(plan.path, fields, rating=plan.rating)
+        except (OSError, UnicodeError, ValueError) as exc:
+            errors += 1
+            print(f"ERROR {rel_path}: {exc}", file=sys.stderr)
+            continue
         print(f"Wrote {rel_path.with_suffix('.xmp')}")
 
     action = "Planned" if args.dry_run else "Wrote"

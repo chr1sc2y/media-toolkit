@@ -10,28 +10,12 @@ from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 from media_toolkit.path_input import normalize_directory_input
+from media_toolkit.rawpy_tools import RAW_EXTS
 
 FILE_TYPES = {
     "hif": frozenset({".hif", ".heif", ".heic"}),
-    "raw": frozenset({
-        ".3fr",
+    "raw": frozenset(RAW_EXTS | {
         ".acr",
-        ".arw",
-        ".cr2",
-        ".cr3",
-        ".dng",
-        ".erf",
-        ".iiq",
-        ".nef",
-        ".nrw",
-        ".orf",
-        ".pef",
-        ".raf",
-        ".raw",
-        ".rw2",
-        ".rwl",
-        ".srw",
-        ".x3f",
         ".xmp",
     }),
 }
@@ -41,7 +25,6 @@ FILE_TYPES = {
 class OrganizeSummary:
     scanned_dirs: int = 0
     moved: int = 0
-    renamed: int = 0
     dry_run_moves: int = 0
     errors: int = 0
     moved_by_type: dict[str, int] = field(default_factory=lambda: defaultdict(int))
@@ -50,25 +33,18 @@ class OrganizeSummary:
     )
 
 
+@dataclass(frozen=True)
+class OrganizeOperation:
+    source: Path
+    destination: Path
+    bucket: str
+
+
 def normalize_extensions(extensions: Iterable[str]) -> frozenset[str]:
     return frozenset(
         ext.lower() if ext.startswith(".") else f".{ext.lower()}"
         for ext in extensions
     )
-
-
-def unique_destination(destination: Path) -> tuple[Path, bool]:
-    if not destination.exists():
-        return destination, False
-
-    for index in range(1, 10000):
-        candidate = destination.with_name(
-            f"{destination.stem}_{index}{destination.suffix}"
-        )
-        if not candidate.exists():
-            return candidate, True
-
-    raise FileExistsError(f"Could not find available destination for {destination}")
 
 
 def normalize_file_types(file_types: dict[str, Iterable[str]]) -> dict[str, frozenset[str]]:
@@ -86,6 +62,117 @@ def classify_file(file_path: Path, file_types: dict[str, frozenset[str]]) -> Opt
     return None
 
 
+def _destination_conflicts(destination: Path, planned_keys: set[str]) -> bool:
+    destination_key = str(destination).casefold()
+    if destination_key in planned_keys:
+        return True
+    if destination.parent.is_dir():
+        destination_name = destination.name.casefold()
+        if any(
+            child.name.casefold() == destination_name
+            for child in destination.parent.iterdir()
+        ):
+            return True
+    return False
+
+
+def _build_organize_plan(
+    base_dir: Path,
+    normalized_types: dict[str, frozenset[str]],
+    summary: OrganizeSummary,
+) -> list[OrganizeOperation]:
+    output_dirs = frozenset(normalized_types)
+    operations: list[OrganizeOperation] = []
+    planned_keys: set[str] = set()
+
+    for current_dir_str, dirnames, filenames in os.walk(base_dir):
+        current_dir = Path(current_dir_str)
+        dirnames[:] = sorted(
+            name for name in dirnames if name.lower() not in output_dirs
+        )
+        summary.scanned_dirs += 1
+
+        for filename in sorted(filenames):
+            source = current_dir / filename
+            bucket = classify_file(source, normalized_types)
+            if bucket is None:
+                continue
+
+            destination_dir = current_dir / bucket
+            destination = destination_dir / source.name
+            if _destination_conflicts(destination, planned_keys):
+                raise FileExistsError(f"destination already exists: {destination}")
+
+            planned_keys.add(str(destination).casefold())
+            operations.append(OrganizeOperation(source, destination, bucket))
+            summary.moved_by_type[bucket] += 1
+            summary.destination_dirs_by_type[bucket].add(destination_dir)
+
+    return operations
+
+
+def _execute_organize_plan(
+    operations: Sequence[OrganizeOperation],
+    summary: OrganizeSummary,
+    *,
+    verbose: bool,
+) -> None:
+    completed: list[OrganizeOperation] = []
+    created_dirs: list[Path] = []
+
+    planned_keys: set[str] = set()
+    for operation in operations:
+        if _destination_conflicts(operation.destination, planned_keys):
+            raise FileExistsError(
+                f"destination already exists: {operation.destination}"
+            )
+        planned_keys.add(str(operation.destination).casefold())
+
+    try:
+        for operation in operations:
+            destination_dir = operation.destination.parent
+            if not destination_dir.exists():
+                destination_dir.mkdir()
+                created_dirs.append(destination_dir)
+            if _destination_conflicts(operation.destination, set()):
+                raise FileExistsError(
+                    f"destination already exists: {operation.destination}"
+                )
+            shutil.move(str(operation.source), str(operation.destination))
+            completed.append(operation)
+            summary.moved += 1
+            if verbose:
+                print(f"MOVED {operation.source} -> {operation.destination}")
+    except OSError as exc:
+        rollback_errors: list[str] = []
+        for operation in reversed(completed):
+            try:
+                shutil.move(str(operation.destination), str(operation.source))
+            except OSError as rollback_exc:
+                rollback_errors.append(
+                    f"{operation.destination} -> {operation.source}: {rollback_exc}"
+                )
+        for directory in reversed(created_dirs):
+            try:
+                directory.rmdir()
+            except OSError:
+                if directory.exists() and any(directory.iterdir()):
+                    continue
+                rollback_errors.append(f"could not remove directory {directory}")
+
+        summary.errors += 1
+        summary.moved = 0 if not rollback_errors else summary.moved
+        if rollback_errors:
+            details = "; ".join(rollback_errors)
+            raise RuntimeError(
+                f"organize failed after {len(completed)} moves; rollback incomplete: "
+                f"{exc}; {details}"
+            ) from exc
+        raise RuntimeError(
+            f"organize failed after {len(completed)} moves and was rolled back: {exc}"
+        ) from exc
+
+
 def organize_directory(
     base_dir: Path,
     *,
@@ -100,44 +187,17 @@ def organize_directory(
         raise NotADirectoryError(f"Not a directory: {base_dir}")
 
     normalized_types = normalize_file_types(file_types or FILE_TYPES)
-    output_dirs = frozenset(normalized_types)
     summary = OrganizeSummary()
 
-    for current_dir_str, dirnames, filenames in os.walk(base_dir):
-        current_dir = Path(current_dir_str)
-        dirnames[:] = [name for name in dirnames if name.lower() not in output_dirs]
-        summary.scanned_dirs += 1
+    operations = _build_organize_plan(base_dir, normalized_types, summary)
+    if dry_run:
+        summary.dry_run_moves = len(operations)
+        if verbose:
+            for operation in operations:
+                print(f"DRY-RUN {operation.source} -> {operation.destination}")
+        return summary
 
-        for filename in filenames:
-            source = current_dir / filename
-            bucket = classify_file(source, normalized_types)
-            if bucket is None:
-                continue
-
-            destination_dir = current_dir / bucket
-            destination, renamed = unique_destination(destination_dir / source.name)
-            summary.moved_by_type[bucket] += 1
-            summary.destination_dirs_by_type[bucket].add(destination_dir)
-
-            if dry_run:
-                summary.dry_run_moves += 1
-                if renamed:
-                    summary.renamed += 1
-                if verbose:
-                    print(f"DRY-RUN {source} -> {destination}")
-                continue
-
-            try:
-                destination_dir.mkdir(exist_ok=True)
-                shutil.move(str(source), str(destination))
-                summary.moved += 1
-                if renamed:
-                    summary.renamed += 1
-                if verbose:
-                    print(f"MOVED {source} -> {destination}")
-            except OSError as exc:
-                summary.errors += 1
-                print(f"ERROR {source}: {exc}", file=sys.stderr)
+    _execute_organize_plan(operations, summary, verbose=verbose)
 
     return summary
 
@@ -166,7 +226,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         epilog="""
 Examples:
   %(prog)s /Volumes/Untitled/DCIM
-  %(prog)s ~/Pictures/SonyImport --dry-run
+  %(prog)s ~/Pictures/SonyImport --dry-run --verbose
   %(prog)s ~/Pictures/Import --type xmp:xmp
   %(prog)s
         """,
@@ -179,7 +239,7 @@ Examples:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print planned moves without changing files.",
+        help="Plan moves without changing files; add --verbose to print each move.",
     )
     parser.add_argument(
         "--verbose",
@@ -224,7 +284,7 @@ def print_summary(summary: OrganizeSummary, target_dir: Path, dry_run: bool) -> 
         for destination_dir in sorted(summary.destination_dirs_by_type[bucket]):
             print(f"    -> {destination_dir}")
 
-    print(f"  Renamed collisions: {summary.renamed}")
+    print("  Collision policy: hard error (automatic renaming disabled)")
     print(f"  Errors: {summary.errors}")
 
 
@@ -240,7 +300,13 @@ def main(argv: list[str] | None = None) -> int:
             verbose=args.verbose,
             file_types=file_types,
         )
-    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+    except (
+        FileExistsError,
+        FileNotFoundError,
+        NotADirectoryError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

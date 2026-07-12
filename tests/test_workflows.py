@@ -20,16 +20,30 @@ class WorkflowsTest(unittest.TestCase):
         self.assertIn("initial-cull", workflow_ids)
         self.assertIn("finalize", workflow_ids)
         self.assertIn("learn-style", workflow_ids)
+        self.assertIn("apple-photos-location-fill", workflow_ids)
 
     def test_workflow_choices_are_registry_derived(self):
         self.assertEqual(
             set(workflow_ids()),
-            {"initial-cull", "finalize", "learn-style"},
+            {
+                "initial-cull",
+                "finalize",
+                "learn-style",
+                "apple-photos-location-fill",
+            },
         )
         self.assertEqual(
             set(workflow_choices(include_auto=True)),
             {"auto", "initial-cull", "finalize", "learn-style"},
         )
+
+    def test_apple_photos_location_workflow_requires_reviewed_apply_plan(self):
+        workflow = get_workflow("apple-photos-location-fill")
+
+        self.assertFalse(workflow["source_path_required"])
+        self.assertIn("--apply-plan", workflow["apply_command"])
+        self.assertIn("timestamp-based", " ".join(workflow["must_not"]))
+        self.assertIn("--apply-plan", render_workflow_detail(workflow))
 
     def test_registry_references_real_mt_commands(self):
         all_text = "\n".join(
@@ -40,6 +54,7 @@ class WorkflowsTest(unittest.TestCase):
 
         self.assertIn("mt preflight-run", all_text)
         self.assertIn("mt learn-style", all_text)
+        self.assertIn("mt ratings-apply", all_text)
 
     def test_finalize_workflow_requires_explicit_external_destination(self):
         workflow = get_workflow("finalize")
@@ -54,7 +69,10 @@ class WorkflowsTest(unittest.TestCase):
         self.assertIn("mt status", " ".join(workflow["preflight"]))
         self.assertIn("mt doctor", " ".join(workflow["preflight"]))
         self.assertIn("mt hif-prune", workflow["default_behavior"])
-        self.assertIn("aggressive", workflow["default_behavior"])
+        self.assertIn("plan", workflow["default_behavior"])
+        self.assertIn("--confirm-delete", workflow["default_behavior"])
+        self.assertIn("--apply-plan", workflow["default_behavior"])
+        self.assertNotIn("by default", workflow["default_behavior"].lower())
         self.assertIn("mt hif-prune", " ".join(workflow["preflight"]))
 
     def test_summary_includes_chinese_workflow_names(self):
@@ -76,6 +94,7 @@ class WorkflowsTest(unittest.TestCase):
         detail = render_workflow_detail(get_workflow("learn-style"))
 
         self.assertIn("mt styles", detail)
+        self.assertIn("--baseline", detail)
 
 
 if __name__ == "__main__":

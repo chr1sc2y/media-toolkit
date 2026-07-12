@@ -54,10 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     stats = []
-    ratings: dict[str, int | None] = {}
+    ratings: dict[Path, int | None] = {}
     errors = 0
     for raw_file in raw_files:
-        ratings[raw_file.stem] = rawpy_tools.read_xmp_rating(raw_file.with_suffix(".xmp"))
+        ratings[raw_file.resolve()] = rawpy_tools.read_xmp_rating(
+            raw_file.with_suffix(".xmp")
+        )
         try:
             stats.append(rawpy_tools.analyze_raw(raw_file))
         except Exception as exc:

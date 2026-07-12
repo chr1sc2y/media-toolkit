@@ -110,7 +110,11 @@ def organize_groups(
             print(f"DRY-RUN {operation.source} -> {operation.destination}")
         return 0
 
-    apply_move_plan(operations)
+    try:
+        apply_move_plan(operations)
+    except (OSError, RuntimeError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     print(f"Moved {len(operations)} file(s).")
 
     if not args.no_contact_sheets:

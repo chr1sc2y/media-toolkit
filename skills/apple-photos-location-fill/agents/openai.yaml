@@ -1,0 +1,7 @@
+interface:
+  display_name: "Apple Photos 补地点"
+  short_description: "先审阅时间邻居生成的地点计划，再按确认后的 JSON 写回 Photos。"
+  default_prompt: "Use $apple-photos-location-fill to build an auditable missing-location plan for Apple Photos; do not apply it until I explicitly approve the reviewed JSON plan."
+
+policy:
+  allow_implicit_invocation: true

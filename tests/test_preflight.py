@@ -98,7 +98,7 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(report.dry_run_exit_code, 0)
         self.assertIn("lake-valley", report.dry_run_output)
         self.assertIn("snow-top", report.dry_run_output)
-        self.assertIn("Would copy: 1 files", report.dry_run_output)
+        self.assertIn("Would copy: 2 files", report.dry_run_output)
 
     def test_finalize_preflight_defaults_to_recursive_subdirectories(self):
         with TemporaryDirectory() as tmp:
@@ -143,6 +143,29 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(payload["decision"], "GO")
         self.assertEqual(payload["doctor"]["summary"]["finalize_directories"], 1)
+
+    def test_recursive_preflight_allows_panorama_only_photos_import(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "photos"
+            destination = Path(tmp) / "sd"
+            export = root / "panorama" / "1" / "raw" / "Export" / "final.jpg"
+            export.parent.mkdir(parents=True)
+            export.write_text("stitched panorama", encoding="utf-8")
+
+            report = preflight_finalize(
+                root,
+                copy_to=destination,
+                scene="panorama",
+                hif_only=False,
+                recursive=True,
+            )
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.decision, "GO")
+        self.assertEqual(report.dry_run_exit_code, 0)
+        self.assertIn("Would import", report.dry_run_output)
+        self.assertEqual(report.doctor["summary"]["finalize_directories"], 0)
+        self.assertEqual(report.doctor["summary"]["photos_import_directories"], 1)
 
     def _touch_exported_pair(self, root: Path, stem: str) -> None:
         (root / "raw" / "Export").mkdir(parents=True)

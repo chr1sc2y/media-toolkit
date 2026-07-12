@@ -2,9 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Version and install the three photography skills directly from `media-toolkit`.
+> **Extended by the 2026-07-12 hardening plan:** The delivered manifest also
+> includes `apple-photos-location-fill`, and installation preflights all four
+> destinations before making any link.
 
-**Architecture:** Complete skill directories live under `skills/`. A small POSIX shell installer derives the repository root from its own path and registers symlinks in `${CODEX_HOME:-$HOME/.codex}/skills` without overwriting real directories.
+**Goal:** Version and install four media-workflow skills directly from
+`media-toolkit`.
+
+**Architecture:** Complete skill directories live under `skills/` and are
+listed in `skills/manifest.json`. A small POSIX shell entrypoint derives the
+repository root, then the Python installer preflights and registers all links
+under `${CODEX_HOME:-$HOME/.codex}/skills` without overwriting real directories
+or unrelated symlinks.
 
 **Tech Stack:** Markdown, YAML, POSIX shell, Python stdlib `unittest`.
 
@@ -33,6 +42,8 @@
 - Create: `skills/initial-cull/**`
 - Create: `skills/extract-feature/**`
 - Create: `skills/learn-color-style/**`
+- Create: `skills/apple-photos-location-fill/**`
+- Create: `skills/manifest.json`
 
 - [ ] Copy the current skill sources into the repository through patches.
 - [ ] Replace hard-coded repository paths with portable repository discovery guidance.
@@ -48,4 +59,3 @@
 - [ ] Run the installer and verify all local links resolve into this repository.
 - [ ] Run focused and full tests.
 - [ ] Review the complete diff, commit all authorized current-branch changes, and push `main`.
-

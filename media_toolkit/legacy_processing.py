@@ -47,25 +47,42 @@ def traverse(
     var2=None,
     var3=None,
     recursive: bool = False,
-) -> None:
+) -> tuple[int, int]:
     root = Path(directory)
     if not root.exists():
         print(f"⚠️  Directory not found: {root}")
-        return
+        return (0, 1)
     if not root.is_dir():
         print(f"⚠️  Not a directory: {root}")
-        return
+        return (0, 1)
 
+    succeeded = 0
+    failed = 0
     for path in root.iterdir():
         try:
             if path.is_dir():
                 if recursive:
-                    traverse(str(path), extension, func, var1, var2, var3, recursive)
+                    child_succeeded, child_failed = traverse(
+                        str(path),
+                        extension,
+                        func,
+                        var1,
+                        var2,
+                        var3,
+                        recursive,
+                    )
+                    succeeded += child_succeeded
+                    failed += child_failed
                 continue
             if path.is_file() and path.name.lower().endswith(extension.lower()):
-                func(FileContext(str(path)), var1, var2, var3)
+                if func(FileContext(str(path)), var1, var2, var3):
+                    succeeded += 1
+                else:
+                    failed += 1
         except (OSError, IOError, PermissionError) as exc:
             print(f"⚠️  Cannot access {path}: {exc}")
+            failed += 1
+    return (succeeded, failed)
 
 
 def _run_command(args: list[str], ctx: FileContext) -> bool:

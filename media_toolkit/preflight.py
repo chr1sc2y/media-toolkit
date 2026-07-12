@@ -6,7 +6,10 @@ from pathlib import Path
 from contextlib import redirect_stderr, redirect_stdout
 
 from media_toolkit.commands import finalize
-from media_toolkit.finalize_workflow import find_finalize_directories
+from media_toolkit.finalize_workflow import (
+    find_finalize_directories,
+    find_photos_import_directories,
+)
 from media_toolkit.workflow_doctor import DoctorReport, inspect_directory
 
 
@@ -56,7 +59,8 @@ def preflight_finalize(
     source = Path(source).expanduser().resolve()
     if recursive:
         bases = find_finalize_directories(source)
-        if not bases:
+        photos_bases = find_photos_import_directories(source)
+        if not bases and (hif_only or not photos_bases):
             return PreflightReport(
                 workflow="finalize",
                 decision="NO-GO",
@@ -84,6 +88,7 @@ def preflight_finalize(
             status="ready" if not reasons else "blocked",
         )
         doctor_report.summary["finalize_directories"] = len(bases)
+        doctor_report.summary["photos_import_directories"] = len(photos_bases)
         doctor_report.findings = [
             finding
             for report in doctor_reports

@@ -95,7 +95,11 @@ def workflow_ids() -> tuple[str, ...]:
 
 
 def workflow_choices(*, include_auto: bool = False) -> tuple[str, ...]:
-    choices = workflow_ids()
+    choices = tuple(
+        workflow["id"]
+        for workflow in list_workflows()
+        if workflow["source_path_required"]
+    )
     if include_auto:
         return ("auto", *choices)
     return choices
@@ -122,6 +126,10 @@ def render_workflow_detail(workflow: dict[str, Any]) -> str:
     ]
     if "hif_only_command" in workflow:
         lines.append(f"hif-only: {workflow['hif_only_command']}")
+    if "apply_command" in workflow:
+        lines.append(f"apply: {workflow['apply_command']}")
+    if "inspection_command" in workflow:
+        lines.append(f"inspect: {workflow['inspection_command']}")
     lines.append(f"default: {workflow['default_behavior']}")
     if workflow.get("preflight"):
         lines.append("preflight:")

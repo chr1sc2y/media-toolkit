@@ -1,7 +1,7 @@
 interface:
   display_name: "成片归档"
-  short_description: "精修完成后按 Lightroom Export 清单复制匹配 HIF 到显式目标目录。"
-  default_prompt: "Use $extract-feature to finalize this refined photo directory; ask for --copy-to if no destination is provided."
+  short_description: "精修完成后先预检，再按 Export 清单安全归档匹配 HIF/HEIF/HEIC。"
+  default_prompt: "Use $extract-feature to preflight and finalize this refined photo directory; require an explicit external --copy-to destination and do not delete source files without a separate confirmed prune request."
 
 policy:
   allow_implicit_invocation: true

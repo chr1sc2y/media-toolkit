@@ -42,6 +42,40 @@ class GenerateContactSheetsTest(unittest.TestCase):
             ],
         )
 
+    def test_collect_images_hif_only_accepts_hif_heif_and_heic(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "hif").mkdir()
+            for name in ("A.HIF", "B.heif", "C.HEIC"):
+                (root / "hif" / name).write_text("preview", encoding="utf-8")
+
+            images = generate_contact_sheets.collect_images(root, False, [], True)
+
+        self.assertEqual([image.name for image in images], ["A.HIF", "B.heif", "C.HEIC"])
+
+    def test_collect_images_excludes_previous_output_tree_and_final_overview(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.jpg"
+            output_dir = root / "contact_sheets"
+            final_overview = root / "_contact_sheet.jpg"
+            output_dir.mkdir()
+            source.write_text("source", encoding="utf-8")
+            (output_dir / "contact_sheet_001.jpg").write_text(
+                "generated", encoding="utf-8"
+            )
+            final_overview.write_text("generated overview", encoding="utf-8")
+
+            images = generate_contact_sheets.collect_images(
+                root,
+                False,
+                [],
+                exclude_roots=[output_dir],
+                exclude_files=[final_overview],
+            )
+
+        self.assertEqual(images, [source])
+
     def test_render_tile_decodes_hif_with_ffmpeg_before_labeling(self):
         with TemporaryDirectory() as tmp:
             temp_dir = Path(tmp)

@@ -1,4 +1,5 @@
 import unittest
+import shutil
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -31,6 +32,33 @@ class PortraitOrganizeTest(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "duplicate stem"):
                 portrait_organize.read_manifest(manifest)
+
+    def test_read_manifest_rejects_case_insensitive_duplicate_stems(self):
+        with TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / "portraits.tsv"
+            manifest.write_text(
+                "stem\tgroup\nDSC0001\t1\ndsc0001\t2\n", encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(ValueError, "duplicate stem"):
+                portrait_organize.read_manifest(manifest)
+
+    def test_manifest_rejects_group_path_traversal(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "raw").mkdir()
+            (root / "hif").mkdir()
+            (root / "raw/DSC0001.ARW").write_text("raw", encoding="utf-8")
+            (root / "hif/DSC0001.HIF").write_text("hif", encoding="utf-8")
+
+            for group in ("../../escaped", "/tmp/escaped", "person-one", "0", "01"):
+                with self.subTest(group=group), self.assertRaisesRegex(
+                    ValueError, "invalid group"
+                ):
+                    portrait_organize.build_move_plan(
+                        root,
+                        [portrait_organize.ManifestEntry("DSC0001", group)],
+                    )
 
     def test_plan_moves_raw_hif_pairs_into_portrait_groups(self):
         with TemporaryDirectory() as tmp:
@@ -67,6 +95,64 @@ class PortraitOrganizeTest(unittest.TestCase):
                 portrait_organize.build_move_plan(
                     root, [portrait_organize.ManifestEntry("DSC0001", "1")]
                 )
+
+    def test_plan_moves_sidecar_and_matching_exports_with_raw_pair(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "raw/Export/Pixcake").mkdir(parents=True)
+            (root / "hif").mkdir()
+            (root / "raw/DSC0001.ARW").write_text("raw", encoding="utf-8")
+            (root / "raw/DSC0001.xmp").write_text("xmp", encoding="utf-8")
+            (root / "hif/DSC0001.HIF").write_text("hif", encoding="utf-8")
+            (root / "raw/Export/DSC0001.jpg").write_text("jpg", encoding="utf-8")
+            (root / "raw/Export/Pixcake/DSC0001.jpg").write_text(
+                "pixcake", encoding="utf-8"
+            )
+
+            operations = portrait_organize.build_move_plan(
+                root, [portrait_organize.ManifestEntry("DSC0001", "1")]
+            )
+            portrait_organize.apply_move_plan(operations)
+
+            target = root / "portrait/1"
+            self.assertTrue((target / "raw/DSC0001.ARW").exists())
+            self.assertTrue((target / "raw/DSC0001.xmp").exists())
+            self.assertTrue((target / "hif/DSC0001.HIF").exists())
+            self.assertTrue((target / "raw/Export/DSC0001.jpg").exists())
+            self.assertTrue((target / "raw/Export/Pixcake/DSC0001.jpg").exists())
+
+    def test_apply_move_plan_rolls_back_completed_moves_after_failure(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "raw").mkdir()
+            (root / "hif").mkdir()
+            raw = root / "raw/DSC0001.ARW"
+            hif = root / "hif/DSC0001.HIF"
+            raw.write_text("raw", encoding="utf-8")
+            hif.write_text("hif", encoding="utf-8")
+            operations = portrait_organize.build_move_plan(
+                root, [portrait_organize.ManifestEntry("DSC0001", "1")]
+            )
+            real_move = shutil.move
+            calls = 0
+
+            def fail_second_move(source, destination):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("simulated move failure")
+                return real_move(source, destination)
+
+            with patch(
+                "media_toolkit.manifest_organize.shutil.move",
+                side_effect=fail_second_move,
+            ), self.assertRaisesRegex(RuntimeError, "rolled back"):
+                portrait_organize.apply_move_plan(operations)
+
+            self.assertTrue(raw.exists())
+            self.assertTrue(hif.exists())
+            self.assertFalse((root / "portrait/1/raw/DSC0001.ARW").exists())
+            self.assertFalse((root / "portrait/1/hif/DSC0001.HIF").exists())
 
     def test_generate_contact_sheets_rebuilds_root_and_portrait_overviews(self):
         with TemporaryDirectory() as tmp:
