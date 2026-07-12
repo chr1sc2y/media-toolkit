@@ -3,6 +3,22 @@
 This repository is becoming `media-toolkit`. The Git repository may still live
 at `media-workflow` until the remote/local folder is renamed.
 
+## Core Agent Skills
+
+Start here before choosing commands. These local Codex skills are the fastest
+route into this repository's main workflows:
+
+| Skill | Use when | Main command path | Hard boundary |
+| --- | --- | --- | --- |
+| `apple-photos-location-fill` | Audit Apple Photos for photos/videos missing location data, generate a reviewed fill plan, or apply a reviewed plan. | `mt fill-locations --force-refresh`, then `mt fill-locations --apply-plan work/photos-location-fill/photos_location_fill_plan.json` after explicit review. | Keep scan/plan and apply as separate stages. Do not write Photos locations directly, and do not claim visual similarity exists unless implemented. |
+| `initial-cull` (`初筛`) | Organize a new photo directory, group portraits/panoramas, rate RAW files, generate contact sheets, and write Lightroom rough-edit XMP. | `mt organize`, `mt raw-analyze`, `mt lr-plan`, `mt lr-apply`, `mt contact-sheet`. | Do not archive/copy final HIF files or import Lightroom exports into Apple Photos. |
+| `extract-feature` (`成片归档`) | After manual Lightroom refinement, archive final picks and optionally import exports into Apple Photos. | `mt preflight-run finalize`, `mt finalize`, then `mt hif-prune`. | Require an explicit `--copy-to` destination outside the source; never infer one path as both source and destination. |
+| `学习` (`学习调色`) | Learn durable scene-specific style direction from manually refined Lightroom/XMP/export evidence. | `mt learn-style`, `mt styles`, plus repo profile/prompt updates when warranted. | Do not organize, rate, rough-edit, finalize, copy, import, or delete media. |
+
+The workflow registry in `media_toolkit/workflows.json` is still the
+machine-readable source for command-level photo workflows. The local skills add
+agent procedure, trigger language, and safety boundaries around those commands.
+
 ## Primary Interface
 
 Use `mt` with clear long command names as the primary interface for humans and
@@ -15,6 +31,7 @@ registry when the task maps to a reusable workflow:
 ```bash
 mt commands
 mt commands finalize
+mt commands hif-prune
 mt commands --json
 mt self-check
 mt self-check --json
@@ -26,6 +43,7 @@ mt batch-report <photo-dir>
 mt doctor <photo-dir>
 mt doctor <photo-dir> --workflow finalize --copy-to <destination-dir>
 mt preflight-run finalize <photo-dir> --copy-to <destination-dir> --scene <scene>
+mt hif-prune <photo-dir> --mode aggressive --scene <scene>
 ```
 
 The command registry lives at `media_toolkit/command_registry.py` and records
@@ -42,8 +60,9 @@ wrappers only; do not put new command behavior there.
 | Clear command | Purpose |
 | --- | --- |
 | `mt finalize` | Copy matching original HIF previews to a user-provided destination and import Lightroom export JPGs into Apple Photos after manual refinement, unless `--hif-only` is passed. |
+| `mt hif-prune` | Delete high-confidence redundant source-side HIF-only repeats after finalization, preserving exports, RAW-backed HIF files, and panorama source HIF files. |
 | `mt organize` | Move camera media into per-directory type folders such as `raw/` and `hif/`. |
-| `mt fill-locations` | Plan or apply missing Apple Photos location fixes. |
+| `mt fill-locations` | Plan missing Apple Photos location fixes, then apply a reviewed JSON plan. |
 | `mt contact-sheet` | Generate contact sheets and a manifest. |
 | `mt status` | Summarize photo directory workflow status. |
 | `mt batch-report` | Print a read-only human summary of a photo batch. |
@@ -66,6 +85,33 @@ Directory-based commands default to the current directory when no path is
 provided. `mt fill-locations` operates on Apple Photos and does not use the
 current directory as a media input.
 
+For Apple Photos location filling, use the `apple-photos-location-fill` skill.
+The safe path is always:
+
+```bash
+mt fill-locations --force-refresh
+mt fill-locations --scan-start "2026-04-30 00:00:00" --force-refresh
+# review the latest row in outputs/photos_location_fill_plan.html
+mt fill-locations --apply-plan work/photos-location-fill/photos_location_fill_plan.json
+```
+
+Future incremental scanning should record a durable watermark for the latest
+planned/applied Photos timestamp or item id, then scan only media after that
+watermark while retaining the last known located item before the watermark as
+left context. Do not make the apply stage rescan or rebuild choices; it must
+write only from the reviewed plan.
+Location source choice must compare both previous and next located candidates
+when both exist and choose the smaller time delta. Do not apply a time
+threshold to source selection; keep the previous/next deltas in the plan so the
+review step can judge unusually distant matches before applying.
+When a known prior completion date exists, use it as `--scan-start`; the command
+adds a lookback window for previous-location context. Let bounded runs finish
+unless Photos returns an error; speed is less important than complete audit
+output. Each completed plan/apply run records timing, counts, max source delta,
+examples, warning rows, and apply status in
+`work/photos-location-fill/run_history.json`, then redraws
+`outputs/photos_location_fill_plan.html` as a compact one-row-per-run table.
+
 Use `mt status <photo-dir> --json` or `mt doctor <photo-dir> --json` before
 running mutating workflow commands. The status values are:
 
@@ -84,6 +130,11 @@ For finalization, prefer `mt preflight-run finalize <photo-dir> --copy-to
 <destination-dir> --scene <scene>` before any real `mt finalize` run. It chains
 the read-only status/doctor checks with `mt finalize --dry-run` and reports
 `GO` or `NO-GO`.
+After a successful real finalization, run `mt hif-prune <photo-dir> --mode
+aggressive --scene <scene>` by default. It permanently deletes only
+high-confidence redundant source-side HIF-only repeats, writes
+`hif_prune_manifest.json` plus a TSV sibling, and must not touch the explicit
+`--copy-to` archive destination.
 
 Use `mt styles` or `mt styles <profile> --json` before choosing an LR style
 profile. Keep learned directions scene-specific; do not collapse them into a
@@ -121,9 +172,16 @@ for consecutive frames with overlapping scenery, similar exposure settings, and
 intentional panning; move each sequence into `panorama/1/`, `panorama/2/`,
 `panorama/3/`, etc. Inside each portrait or panorama directory, keep the same
 media split such as `raw/` for RAW plus XMP sidecars and `hif/` for matching
-previews. Initial cull must rate every RAW file, including portrait, panorama,
-and ordinary files, by writing lowercase `.xmp` sidecars. Do not write XMP
-label fields; star ratings are the durable selection signal. Include
+previews. During initial cull, if ordinary travel photos are visually mixed,
+use model visual judgment to classify them into broad source-side scene
+directories before rating. Keep the top-level category count to 4-5 total,
+including `portrait` and `panorama` within that limit. Prefer broad English
+slug names such as `lake-valley`, `snow-top`, `village-street`, or
+`forest-road`; avoid many narrow one-off folders. Move associated RAW, HIF, XMP,
+and matching `raw/Export` files together without rewriting image metadata or XMP
+settings. Initial cull must rate every RAW file, including scene-folder,
+portrait, panorama, and ordinary files, by writing lowercase `.xmp` sidecars.
+Do not write XMP label fields; star ratings are the durable selection signal. Include
 Lightroom-readable sidecar markers such as
 `crs:HasSettings=True`, `crs:AlreadyApplied=False`,
 `photoshop:SidecarForExtension=ARW`, `dc:format=image/x-sony-arw`, and
@@ -198,7 +256,11 @@ branches operate on all `>=3` star files:
 After Lightroom manual refinement, use `mt finalize` for the final
 "成片归档" workflow. This step uses Lightroom exports as the authoritative final
 selection list: filenames in root `raw/Export/` and
-`portrait/<n>/raw/Export/` define the stems to archive. It copies the matching
+`portrait/<n>/raw/Export/` define the stems to archive. Finalization should
+default to recursive scanning so existing scene subdirectories such as
+`lake-valley/`, `portrait/`, or `snow-top/` are included when they contain their
+own `raw/` tree. Keep user-facing reports focused on what was included and what
+was copied/imported; do not expose command details unless the user asks. It copies the matching
 original HIF previews directly to the user-provided destination from
 `--copy-to`; if no copy destination is provided, ask the user for one instead
 of inferring a local `featured/` folder, the source root, or a prior remembered
@@ -210,6 +272,12 @@ Lightroom export files to the HIF destination, and does not generate a contact
 sheet by default. Use `--scene` to name
 the scenery class for reporting and future repo-level style tuning, for example
 `mt finalize <photo-dir> --copy-to /Volumes/SD/DCIM/101MSDCF --photos-album Sony --scene flower-field`.
+If an `Export` directory contains a `Pixcake/` subdirectory, treat
+`Export/Pixcake/` files as higher-priority final exports. When a direct
+`Export/` file and a `Pixcake/` file share the same stem, use the Pixcake file
+for Photos import/reporting and do not import the same-stem direct Export file.
+The HIF copy list remains stem-based, so the matching original HIF is copied
+once.
 When the user asks to only copy HIF files, use
 `mt finalize <photo-dir> --copy-to <destination> --hif-only --scene <scene>`.
 Copy HIF with metadata-preserving semantics; do not rewrite EXIF, timestamps,
@@ -223,6 +291,14 @@ validating a batch; it prevents both HIF copying and Apple Photos import. Use
 listing the Photos import plan. Photos import may require macOS automation
 permission and may not fully prevent duplicates, so report any import failure as
 a separate partial failure from HIF copying.
+After a successful real finalization, run `mt hif-prune <photo-dir> --mode
+aggressive --scene <scene>` unless the user explicitly asks not to clean HIF
+files. This command is allowed to permanently delete high-confidence redundant
+source-side HIF-only repeats. It must preserve HIF files whose stems are selected
+by `raw/Export` or `Export/Pixcake`, HIF files with matching RAW files,
+`panorama/<n>/hif/` source frames, unreadable files, and every file in the
+archive destination. It writes `hif_prune_manifest.json` and a TSV manifest so
+the report can state what was deleted and why.
 Do not write per-photo-directory style learning reports; fold user refinement
 learning back into repository profiles, preset notes, prompts, and memory.
 Lightroom-generated panorama DNG files such as `*-Pano.dng` are final panorama
@@ -334,11 +410,15 @@ separate user-facing workflow. The two user-facing workflows are:
 2. Finalize (`成片归档`): after the user manually refines photos in Lightroom,
    export the final picks from Lightroom, then copy matching original HIF
    previews directly to the user-provided destination and import Lightroom
-   export JPGs into Apple Photos unless `--hif-only` is passed. The final pick
-   list comes from `raw/Export/` and `portrait/<n>/raw/Export/`, not from every
-   remaining RAW. If only one path is supplied, treat it as the source photo
-   directory and ask for `--copy-to`; never use the source root or a child
-   directory as the archive destination.
+   export JPGs into Apple Photos unless `--hif-only` is passed, then run
+   `mt hif-prune <photo-dir> --mode aggressive --scene <scene>` to delete
+   redundant HIF-only repeats from the source. The final pick list comes from
+   `raw/Export/`, `portrait/<n>/raw/Export/`, and recursive scene subdirectories
+   when the source is an event/root directory, not from every remaining RAW. If
+   only one path is supplied, treat it as the source photo directory and ask for
+   `--copy-to`; never use the source root or a child directory as the archive
+   destination. HIF pruning must preserve exported stems, RAW-backed HIF files,
+   panorama source HIF files, and the archive destination.
    When manual XMP refinements teach a new scene direction, update repository
    profiles/docs directly instead of writing a local learning report into the
    photo directory.

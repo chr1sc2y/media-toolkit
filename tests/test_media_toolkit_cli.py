@@ -26,6 +26,7 @@ class MediaToolkitCliTest(unittest.TestCase):
 
     def test_resolves_long_commands(self):
         self.assertEqual(resolve_command("finalize").script_name, "finalize.py")
+        self.assertEqual(resolve_command("hif-prune").script_name, "hif_prune.py")
         self.assertEqual(resolve_command("organize").script_name, "organize.py")
         self.assertEqual(resolve_command("fill-locations").script_name, "fill_missing_photo_locations.py")
         self.assertEqual(resolve_command("contact-sheet").script_name, "generate_contact_sheets.py")
@@ -258,6 +259,19 @@ class MediaToolkitCliTest(unittest.TestCase):
             argv = build_script_argv(
                 command,
                 ["--output", "/tmp/lr_plan.tsv", "--ratings", ">=3", "--style", "flower"],
+                interactive=False,
+            )
+
+        self.assertIsNone(argv)
+        self.assertIn("directory required", stderr.getvalue())
+
+    def test_hif_prune_value_options_do_not_count_as_directory(self):
+        command = resolve_command("hif-prune")
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            argv = build_script_argv(
+                command,
+                ["--mode", "aggressive", "--scene", "grassland", "--manifest", "/tmp/plan.json"],
                 interactive=False,
             )
 

@@ -49,6 +49,22 @@ class ExtractFeaturedRawTest(unittest.TestCase):
             self.assertEqual((destination / "DSC0001.HIF").read_text(), "hif")
             self.assertFalse((destination / "DSC0001.jpg").exists())
 
+    def test_pixcake_export_can_select_hif_for_archive(self):
+        with TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "sdcard"
+            (root / "raw" / "Export" / "Pixcake").mkdir(parents=True)
+            (root / "hif").mkdir()
+            (root / "raw" / "Export" / "Pixcake" / "DSC0001.jpg").write_text(
+                "pixcake", encoding="utf-8"
+            )
+            (root / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
+
+            self.assertTrue(self.quiet_process(root, destination))
+
+            self.assertEqual((destination / "DSC0001.HIF").read_text(), "hif")
+
     def test_fails_when_exported_file_matching_hif_is_missing(self):
         with TemporaryDirectory() as tmp:
             tmp_root = Path(tmp)

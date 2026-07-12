@@ -79,6 +79,71 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(payload["decision"], "GO")
         self.assertEqual(payload["workflow"], "finalize")
 
+    def test_finalize_preflight_recursive_checks_scene_subdirectories(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "photos"
+            destination = Path(tmp) / "sd" / "DCIM" / "101MSDCF"
+            self._touch_exported_pair(root / "lake-valley", "DSC0001")
+            self._touch_exported_pair(root / "snow-top", "DSC0002")
+
+            report = preflight_finalize(
+                root,
+                copy_to=destination,
+                scene="snow-mountain",
+                hif_only=True,
+                recursive=True,
+            )
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.dry_run_exit_code, 0)
+        self.assertIn("lake-valley", report.dry_run_output)
+        self.assertIn("snow-top", report.dry_run_output)
+        self.assertIn("Would copy: 1 files", report.dry_run_output)
+
+    def test_finalize_preflight_defaults_to_recursive_subdirectories(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "photos"
+            destination = Path(tmp) / "sd" / "DCIM" / "101MSDCF"
+            self._touch_exported_pair(root / "lake-valley", "DSC0001")
+
+            report = preflight_finalize(
+                root,
+                copy_to=destination,
+                scene="overcast-travel",
+                hif_only=True,
+            )
+
+        self.assertTrue(report.ok)
+        self.assertIn("lake-valley", report.dry_run_output)
+
+    def test_preflight_run_recursive_cli_output(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "photos"
+            destination = Path(tmp) / "sd"
+            self._touch_exported_pair(root / "lake-valley", "DSC0001")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                exit_code = preflight_run.main(
+                    [
+                        "finalize",
+                        str(root),
+                        "--copy-to",
+                        str(destination),
+                        "--scene",
+                        "overcast-travel",
+                        "--hif-only",
+                        "--recursive",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["decision"], "GO")
+        self.assertEqual(payload["doctor"]["summary"]["finalize_directories"], 1)
+
     def _touch_exported_pair(self, root: Path, stem: str) -> None:
         (root / "raw" / "Export").mkdir(parents=True)
         (root / "hif").mkdir()

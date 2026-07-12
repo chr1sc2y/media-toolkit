@@ -6,6 +6,7 @@ from pathlib import Path
 from contextlib import redirect_stderr, redirect_stdout
 
 from media_toolkit.commands import finalize
+from media_toolkit.finalize_workflow import find_finalize_directories
 from media_toolkit.workflow_doctor import DoctorReport, inspect_directory
 
 
@@ -50,9 +51,48 @@ def preflight_finalize(
     scene: str,
     hif_only: bool = False,
     photos_album: str = "Sony",
+    recursive: bool = True,
 ) -> PreflightReport:
-    doctor_report = inspect_directory(source, workflow="finalize", copy_to=copy_to)
-    reasons = _blocking_reasons(doctor_report)
+    source = Path(source).expanduser().resolve()
+    if recursive:
+        bases = find_finalize_directories(source)
+        if not bases:
+            return PreflightReport(
+                workflow="finalize",
+                decision="NO-GO",
+                status="blocked",
+                reasons=["no finalize directories with raw/ found"],
+                doctor={
+                    "path": str(source),
+                    "inferred_stage": "recursive-finalize",
+                    "status": "blocked",
+                    "summary": {"finalize_directories": 0},
+                    "findings": [],
+                },
+            )
+        doctor_reports = [
+            inspect_directory(base, workflow="finalize", copy_to=copy_to)
+            for base in bases
+        ]
+        reasons = []
+        for report in doctor_reports:
+            reasons.extend(_blocking_reasons(report))
+        doctor_report = DoctorReport(
+            path=str(source),
+            workflow="finalize",
+            inferred_stage="recursive-finalize",
+            status="ready" if not reasons else "blocked",
+        )
+        doctor_report.summary["finalize_directories"] = len(bases)
+        doctor_report.findings = [
+            finding
+            for report in doctor_reports
+            for finding in report.findings
+            if finding.severity == "error"
+        ]
+    else:
+        doctor_report = inspect_directory(source, workflow="finalize", copy_to=copy_to)
+        reasons = _blocking_reasons(doctor_report)
     if reasons:
         return PreflightReport(
             workflow="finalize",
@@ -63,13 +103,15 @@ def preflight_finalize(
         )
 
     argv = [
-        str(Path(source).expanduser().resolve()),
+        str(source),
         "--copy-to",
         str(Path(copy_to).expanduser()),
         "--scene",
         scene,
         "--dry-run",
     ]
+    if recursive:
+        argv.append("--recursive")
     if hif_only:
         argv.append("--hif-only")
     else:

@@ -1,5 +1,23 @@
 # Agent Workflow Registry
 
+## Core Agent Skills
+
+Use these local Codex skills before falling back to ad hoc command selection:
+
+| Skill | Trigger | Command path |
+| --- | --- | --- |
+| `apple-photos-location-fill` | Apple Photos missing geolocation audit/fill. | `mt fill-locations --force-refresh` or `mt fill-locations --scan-start "<timestamp>" --force-refresh`, review plan, then `mt fill-locations --apply-plan work/photos-location-fill/photos_location_fill_plan.json`. |
+| `initial-cull` (`初筛`) | New photo directory organization, rating, contact sheets, and LR rough edits. | `mt organize`, `mt raw-analyze`, `mt lr-plan`, `mt lr-apply`, `mt contact-sheet`. |
+| `extract-feature` (`成片归档`) | Post-Lightroom final pick archiving and optional Photos import. | `mt preflight-run finalize`, `mt finalize`, `mt hif-prune`. |
+| `学习` (`学习调色`) | Preserve learned scene-specific Lightroom style from manual refinements. | `mt learn-style`, `mt styles`, repo profile/prompt updates. |
+
+`apple-photos-location-fill` is not a photo-directory workflow. It operates on
+Apple Photos and must keep planning separate from writes: generate
+one compact HTML run-log table plus a machine-readable JSON plan first, then
+apply only a reviewed JSON plan. Completed runs append timing, counts, examples,
+warning rows, and apply status to `work/photos-location-fill/run_history.json`
+and redraw `outputs/photos_location_fill_plan.html` with one row per run.
+
 The source of truth for agent-facing workflow selection is
 `media_toolkit/workflows.json`.
 
@@ -10,7 +28,8 @@ Use it before choosing commands for photo workflow requests:
 - `finalize` / `成片归档`: after manual Lightroom refinement, require both a
   source photo directory and an explicit destination outside that source; copy
   matching original HIF previews and optionally import Lightroom exports into
-  Apple Photos.
+  Apple Photos, then run aggressive source-side HIF pruning for redundant
+  HIF-only repeats.
 - `learn-style` / `学习调色`: update repository knowledge from manual
   refinements; do not organize, archive, copy, or delete media.
 
@@ -19,6 +38,7 @@ Quick inspection:
 ```bash
 mt commands
 mt commands finalize
+mt commands hif-prune
 mt commands --json
 mt self-check
 mt self-check --json
@@ -30,6 +50,7 @@ mt batch-report <photo-dir>
 mt doctor <photo-dir>
 mt doctor <photo-dir> --workflow finalize --copy-to <destination-dir>
 mt preflight-run finalize <photo-dir> --copy-to <destination-dir> --scene <scene>
+mt hif-prune <photo-dir> --mode aggressive --scene <scene>
 mt styles
 mt styles <profile> --json
 mt learn-style <photo-dir> --scene <scene> --json
@@ -54,6 +75,7 @@ are thin compatibility wrappers for old entry points only.
 Package command modules:
 
 - `mt finalize`
+- `mt hif-prune`
 - `mt commands`
 - `mt workflows`
 - `mt self-check`

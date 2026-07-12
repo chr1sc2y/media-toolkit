@@ -1,0 +1,7 @@
+interface:
+  display_name: "学习调色"
+  short_description: "从已精修照片的 Export/XMP 中学习场景调色风格，只沉淀知识。"
+  default_prompt: "Use $学习 to learn my Lightroom color grading style from this refined photo directory without organizing, finalizing, copying, or deleting media."
+
+policy:
+  allow_implicit_invocation: true

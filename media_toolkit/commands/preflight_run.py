@@ -42,6 +42,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Validate HIF-only finalization without Photos import.",
     )
+    finalize_parser.add_argument(
+        "--recursive",
+        "-r",
+        dest="recursive",
+        action="store_true",
+        default=True,
+        help="Validate every subdirectory containing a raw/ folder.",
+    )
+    finalize_parser.add_argument(
+        "--no-recursive",
+        dest="recursive",
+        action="store_false",
+        help="Validate only the provided directory.",
+    )
     finalize_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     return parser.parse_args(argv)
 
@@ -55,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
             scene=args.scene,
             hif_only=args.hif_only,
             photos_album=args.photos_album,
+            recursive=args.recursive,
         )
     else:
         raise AssertionError(f"unsupported workflow: {args.workflow}")

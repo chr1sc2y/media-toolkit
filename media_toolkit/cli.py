@@ -149,6 +149,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             f"Commands:\n{command_table()}\n\n"
             "Examples:\n"
             "  mt finalize /path/to/photos --copy-to /Volumes/SDCARD/DCIM/100MSDCF --photos-album Sony --scene flower-field\n"
+            "  mt hif-prune /path/to/photos --mode aggressive --scene flower-field\n"
             "  mt organize --dry-run\n"
             "  mt fill-locations --describe\n"
             "  mt contact-sheet --export-only\n"

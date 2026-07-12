@@ -59,8 +59,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--recursive",
         "-r",
+        dest="recursive",
         action="store_true",
+        default=True,
         help="Finalize every subdirectory containing a raw/ folder.",
+    )
+    parser.add_argument(
+        "--no-recursive",
+        dest="recursive",
+        action="store_false",
+        help="Finalize only the provided directory.",
     )
     return parser.parse_args(argv)
 
@@ -71,14 +79,6 @@ def main(argv: list[str] | None = None) -> int:
     if not root.exists() or not root.is_dir():
         print(f"Error: directory not found: {root}", file=sys.stderr)
         return 1
-
-    if args.recursive:
-        bases = find_finalize_directories(root)
-        if not bases:
-            print("No directories with raw/ found.", file=sys.stderr)
-            return 1
-    else:
-        bases = [root]
 
     copy_to = Path(args.copy_to).expanduser() if args.copy_to else None
     if copy_to is None:
@@ -91,6 +91,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("Error: --copy-to is required for the HIF archive.", file=sys.stderr)
             return 2
+
+    if args.recursive:
+        bases = find_finalize_directories(root)
+        if not bases:
+            print("No directories with raw/ found.", file=sys.stderr)
+            return 1
+    else:
+        bases = [root]
 
     assert copy_to is not None
     destination = copy_to.expanduser().resolve()

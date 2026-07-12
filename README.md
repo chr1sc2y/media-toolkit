@@ -8,7 +8,13 @@ Install once from the repository root:
 
 ```bash
 python3 -m pip install -e .
+sh scripts/install-codex-skills.sh
 ```
+
+The second command registers the repository-owned photography skills under
+`${CODEX_HOME:-$HOME/.codex}/skills` using symlinks. The canonical skill files
+live in `skills/`, so a later `git pull` updates the installed workflows without
+copying files again. Restart Codex after the first registration.
 
 After that, run `mt` from any directory:
 
@@ -43,6 +49,15 @@ When a directory-based command is run without a path, `mt` uses the current
 directory.
 
 ## Agent Workflows
+
+Core local skills for this repository are versioned under `skills/`:
+
+| Skill | Use when | Primary commands |
+| --- | --- | --- |
+| `apple-photos-location-fill` | Review Apple Photos for missing geolocation and fill only after plan review. | `mt fill-locations --force-refresh`; then `mt fill-locations --apply-plan work/photos-location-fill/photos_location_fill_plan.json`. |
+| `initial-cull` (`初筛`) | Organize/rate a new shoot, separate portraits/panoramas, create contact sheets, and write LR rough edits. | `mt organize`, `mt raw-analyze`, `mt lr-plan`, `mt lr-apply`. |
+| `extract-feature` (`成片归档`) | Archive Lightroom final picks and optionally import exports into Apple Photos. | `mt preflight-run finalize`, `mt finalize`, `mt hif-prune`. |
+| `学习` (`学习调色`) | Learn scene-specific style from manually refined Lightroom/XMP evidence. | `mt learn-style`, `mt styles`. |
 
 Agents should inspect the workflow registry before choosing commands:
 
@@ -185,7 +200,7 @@ scripts, and agent instructions.
 | --- | --- | --- |
 | `mt finalize` | Copy matching original HIF previews to a user-provided destination and, unless `--hif-only` is passed, import Lightroom export JPGs into Apple Photos after manual refinement. | Uses current directory when no source path is passed interactively; always requires an explicit `--copy-to` destination outside the source photo directory. |
 | `mt organize` | Move camera media into type folders such as `raw/` and `hif/`. | Uses current directory when no path is passed. |
-| `mt fill-locations` | Plan or apply missing Apple Photos geolocation fixes. | Works on Apple Photos, not the current directory. |
+| `mt fill-locations` | Plan missing Apple Photos geolocation fixes and apply only a reviewed JSON plan. | Works on Apple Photos, not the current directory. |
 | `mt contact-sheet` | Generate contact sheet images and `manifest.tsv`. | Uses current directory when no path is passed. |
 | `mt status` | Summarize photo directory workflow status. | Read-only; use `--json` for agent-readable output. |
 | `mt batch-report` | Print a read-only human summary of a photo batch. | Uses current directory when no path is passed. |
@@ -450,30 +465,40 @@ summary grouped by file type instead of one line per moved file.
 ```bash
 mt fill-locations --describe
 mt fill-locations --force-refresh
+mt fill-locations --scan-start "2026-04-30 00:00:00" --force-refresh
 mt fill-locations --start 2026-06-01 --end 2026-06-07 --force-refresh
-mt fill-locations --start 2026-06-01 --end 2026-06-07 --apply
+mt fill-locations --apply-plan work/photos-location-fill/photos_location_fill_plan.json
 ```
 
 Finds Apple Photos items without a location and plans a location fill from
-nearby timeline neighbors. By default it only writes a CSV/HTML plan; pass
-`--apply` to write the planned locations back through the Photos app.
+nearby timeline neighbors. By default it writes one fixed HTML run-log table
+for humans plus a machine-readable JSON plan under `work/`; pass `--apply-plan`
+after reviewing the latest run summary to write the planned locations back
+through the Photos app without rescanning the library.
 
-- Uses the previous located item when it is within 10 minutes.
-- Falls back to the next located item when the previous item is too far away.
-- `--threshold-minutes` changes the 10 minute window.
-- `--require-next-within-threshold` also requires the next fallback to be within
-  the threshold.
+- Uses a two-pass timeline scan to record both previous and next located
+  candidates for each missing item.
+- Chooses the closer previous/next candidate by timestamp. No time threshold is
+  applied to source selection; review the recorded deltas before applying.
+- `--scan-start` limits Photos scanning to that timestamp and later, with a
+  configurable lookback window for the previous located context item.
+- Writes the reviewed intermediate plan to
+  `work/photos-location-fill/photos_location_fill_plan.json`.
+- `--apply-plan <json>` writes from that reviewed plan without refreshing or
+  rebuilding the Photos timeline cache.
 - `--start` and `--end` limit which missing items are planned/applied.
 - `--force-refresh` refreshes the Photos timeline cache; without it, the script
   reuses `work/photos-location-fill/`.
 - `--describe` prints the script's feature summary and exits.
-- Every run records start time, finish time, duration, cache mode, and apply
-  result in `outputs/photos_location_fill_summary*.txt` and prints the timing to
-  stdout.
+- Every run records start time, finish time, duration, cache mode, counts,
+  max source delta, examples, warning rows, and apply status in
+  `work/photos-location-fill/run_history.json` and redraws
+  `outputs/photos_location_fill_plan.html` as a compact one-row-per-run table.
 
 AppleScript access to Photos is slow. Time ranges reduce the number of missing
 items planned or applied, but a forced refresh still walks the Photos timeline to
-build the cache. Reusing the cache is much cheaper for repeated runs.
+build the cache. Let bounded runs finish unless Photos returns an error; speed
+is less important than getting a complete auditable plan.
 
 ## Project Structure
 

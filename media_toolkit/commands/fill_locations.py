@@ -2,8 +2,8 @@
 """
 Fill missing Apple Photos locations from nearby timeline neighbors.
 
-Default mode is dry-run: scan Photos, generate a plan, and write readable CSV/HTML
-outputs. Pass --apply to write the planned locations back to Photos.
+Default mode is dry-run: scan Photos, generate a reviewed JSON plan and a human
+HTML report. Pass --apply-plan to write reviewed locations back to Photos.
 """
 
 from __future__ import annotations
@@ -16,21 +16,25 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WORK_DIR = ROOT / "work" / "photos-location-fill"
 DEFAULT_OUTPUT_DIR = ROOT / "outputs"
+RUN_HISTORY_NAME = "run_history.json"
+HUMAN_REPORT_NAME = "photos_location_fill_plan.html"
 
 SCRIPT_FEATURES = [
     "Find Apple Photos media items that have no location.",
-    "Build a dry-run CSV/HTML fill plan from nearby located timeline neighbors.",
-    "Prefer the previous located item within the threshold, then optionally fall back to the next located item.",
+    "Build a dry-run HTML report and reviewed JSON plan from nearby located timeline neighbors.",
+    "Use a two-pass scan to compare previous and next located timeline neighbors.",
+    "Choose the closer eligible previous/next source by timestamp.",
+    "Use --scan-start with a lookback window for faster incremental planning.",
     "Reuse cached Photos timeline exports unless --force-refresh is provided.",
-    "Write planned locations back to Photos only when --apply is provided.",
-    "Record run timing in stdout and the summary file.",
+    "Write planned locations back to Photos only when --apply or --apply-plan is provided.",
+    "Record run timing in stdout, the HTML report, and the run history JSON.",
 ]
 
 
@@ -73,7 +77,8 @@ def script_description() -> str:
             "",
             "Typical runs:",
             "- Dry-run with fresh Photos scan: mt fill-locations --force-refresh",
-            "- Apply from cached plan data: mt fill-locations --apply",
+            "- Incremental dry-run from a date: mt fill-locations --scan-start '2026-04-30 00:00:00' --force-refresh",
+            "- Apply reviewed plan data: mt fill-locations --apply-plan work/photos-location-fill/photos_location_fill_plan.json",
         ]
     )
     return "\n".join(lines)
@@ -112,6 +117,22 @@ on monthNum(m)
   return 0
 end monthNum
 
+on monthConst(n)
+  set ms to {January, February, March, April, May, June, July, August, September, October, November, December}
+  return item n of ms
+end monthConst
+
+on makeDate(y, mo, da, hh, mi, ss)
+  set d to current date
+  set year of d to y
+  set month of d to my monthConst(mo)
+  set day of d to da
+  set hours of d to hh
+  set minutes of d to mi
+  set seconds of d to ss
+  return d
+end makeDate
+
 on isoDate(d)
   try
     set y to year of d as integer
@@ -138,16 +159,36 @@ end csvCell
 '''
 
 
-def export_timeline_and_missing(work_dir: Path, force: bool) -> tuple[Path, Path, bool]:
-    timeline_path = work_dir / "timeline_basic.csv"
-    missing_path = work_dir / "missing_items.csv"
-    if not force and timeline_path.exists() and missing_path.exists():
-        return timeline_path, missing_path, True
+def applescript_make_date(dt: datetime) -> str:
+    return f"my makeDate({dt.year}, {dt.month}, {dt.day}, {dt.hour}, {dt.minute}, {dt.second})"
 
-    work_dir.mkdir(parents=True, exist_ok=True)
-    script = (
-        f'set timelinePath to {applescript_quote(str(timeline_path))}\n'
-        f'set missingPath to {applescript_quote(str(missing_path))}\n'
+
+def build_export_timeline_script(
+    timeline_path: Path,
+    missing_path: Path,
+    scan_start: datetime | None = None,
+    scan_lookback_hours: float = 24.0,
+) -> str:
+    if scan_start:
+        lookback_start = scan_start - timedelta(hours=scan_lookback_hours)
+        scan_preamble = (
+            "set scanStartEnabled to true\n"
+            f"set scanStartDate to {applescript_make_date(scan_start)}\n"
+            f"set scanLookbackDate to {applescript_make_date(lookback_start)}\n"
+        )
+        photos_query = "set xs to media items whose its date ≥ scanLookbackDate"
+    else:
+        scan_preamble = (
+            "set scanStartEnabled to false\n"
+            "set scanStartDate to missing value\n"
+            "set scanLookbackDate to missing value\n"
+        )
+        photos_query = "set xs to media items"
+
+    return (
+        f"set timelinePath to {applescript_quote(str(timeline_path))}\n"
+        f"set missingPath to {applescript_quote(str(missing_path))}\n"
+        + scan_preamble
         + COMMON_APPLESCRIPT_HELPERS
         + r'''
 set tf to open for access POSIX file timelinePath with write permission
@@ -165,8 +206,11 @@ set missingBuffer to ""
 set rowCount to 0
 set missingCount to 0
 
+with timeout of 3600 seconds
 tell application "Photos"
-  set xs to media items
+  '''
+        + photos_query
+        + r'''
   repeat with m in xs
     try
       set uid to id of m as text
@@ -179,8 +223,10 @@ tell application "Photos"
       set fn to ""
     end try
     try
-      set dt to my isoDate(date of m)
+      set itemDate to date of m
+      set dt to my isoDate(itemDate)
     on error
+      set itemDate to missing value
       set dt to ""
     end try
 
@@ -197,18 +243,32 @@ tell application "Photos"
       set isMissing to true
     end try
 
-    set timelineBuffer to timelineBuffer & my csvCell(uid) & "," & my csvCell(fn) & "," & my csvCell(dt) & linefeed
-    if isMissing then
+    set shouldWriteTimeline to true
+    set shouldWriteMissing to isMissing
+    if scanStartEnabled and itemDate < scanStartDate and isMissing then
+      set shouldWriteTimeline to false
+      set shouldWriteMissing to false
+    end if
+    if scanStartEnabled and itemDate < scanStartDate and not isMissing then
+      set shouldWriteMissing to false
+    end if
+
+    if shouldWriteTimeline then
+      set timelineBuffer to timelineBuffer & my csvCell(uid) & "," & my csvCell(fn) & "," & my csvCell(dt) & linefeed
+      set rowCount to rowCount + 1
+    end if
+    if shouldWriteMissing then
       set missingCount to missingCount + 1
       set missingBuffer to missingBuffer & my csvCell(uid) & "," & my csvCell(fn) & "," & my csvCell(dt) & "," & my csvCell("missing") & linefeed
     end if
 
-    set rowCount to rowCount + 1
     if rowCount mod 500 = 0 then
-      set tf to open for access POSIX file timelinePath with write permission
-      write timelineBuffer to tf starting at eof
-      close access tf
-      set timelineBuffer to ""
+      if timelineBuffer is not "" then
+        set tf to open for access POSIX file timelinePath with write permission
+        write timelineBuffer to tf starting at eof
+        close access tf
+        set timelineBuffer to ""
+      end if
 
       if missingBuffer is not "" then
         set mf to open for access POSIX file missingPath with write permission
@@ -219,6 +279,7 @@ tell application "Photos"
     end if
   end repeat
 end tell
+end timeout
 
 if timelineBuffer is not "" then
   set tf to open for access POSIX file timelinePath with write permission
@@ -234,7 +295,28 @@ end if
 return "exported=" & rowCount & ", missing=" & missingCount
 '''
     )
-    print("Scanning Photos timeline and missing locations. This can take several minutes...")
+
+
+def export_timeline_and_missing(
+    work_dir: Path,
+    force: bool,
+    scan_start: datetime | None = None,
+    scan_lookback_hours: float = 24.0,
+) -> tuple[Path, Path, bool]:
+    timeline_path = work_dir / "timeline_basic.csv"
+    missing_path = work_dir / "missing_items.csv"
+    if not force and timeline_path.exists() and missing_path.exists():
+        return timeline_path, missing_path, True
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    script = build_export_timeline_script(timeline_path, missing_path, scan_start, scan_lookback_hours)
+    if scan_start:
+        print(
+            "Scanning Photos timeline and missing locations from "
+            f"{scan_start:%Y-%m-%d %H:%M:%S} with {scan_lookback_hours:g}h lookback..."
+        )
+    else:
+        print("Scanning Photos timeline and missing locations. This can take several minutes...")
     print(run_osascript(script))
     return timeline_path, missing_path, False
 
@@ -272,13 +354,190 @@ class PlanRow:
     latitude: str = ""
     longitude: str = ""
     note: str = ""
+    previous_source_id: str = ""
+    previous_source_filename: str = ""
+    previous_source_taken_at: str = ""
+    previous_delta_minutes: float | None = None
+    next_source_id: str = ""
+    next_source_filename: str = ""
+    next_source_taken_at: str = ""
+    next_delta_minutes: float | None = None
+
+
+PLAN_JSON_NAME = "photos_location_fill_plan.json"
+
+
+def row_to_json(row: PlanRow) -> dict[str, object]:
+    return {
+        "target_id": row.target_id,
+        "target_filename": row.target_filename,
+        "target_taken_at": row.target_taken_at,
+        "source_rule": row.source_rule,
+        "source_id": row.source_id,
+        "source_filename": row.source_filename,
+        "source_taken_at": row.source_taken_at,
+        "delta_minutes": row.delta_minutes,
+        "latitude": row.latitude,
+        "longitude": row.longitude,
+        "note": row.note,
+        "previous_source_id": row.previous_source_id,
+        "previous_source_filename": row.previous_source_filename,
+        "previous_source_taken_at": row.previous_source_taken_at,
+        "previous_delta_minutes": row.previous_delta_minutes,
+        "next_source_id": row.next_source_id,
+        "next_source_filename": row.next_source_filename,
+        "next_source_taken_at": row.next_source_taken_at,
+        "next_delta_minutes": row.next_delta_minutes,
+    }
+
+
+def row_from_json(data: dict[str, object]) -> PlanRow:
+    def text(key: str) -> str:
+        value = data.get(key, "")
+        return "" if value is None else str(value)
+
+    def minutes(key: str) -> float | None:
+        value = data.get(key)
+        if value in ("", None):
+            return None
+        return float(value)
+
+    return PlanRow(
+        target_id=text("target_id"),
+        target_filename=text("target_filename"),
+        target_taken_at=text("target_taken_at"),
+        source_rule=text("source_rule"),
+        source_id=text("source_id"),
+        source_filename=text("source_filename"),
+        source_taken_at=text("source_taken_at"),
+        delta_minutes=minutes("delta_minutes"),
+        latitude=text("latitude"),
+        longitude=text("longitude"),
+        note=text("note"),
+        previous_source_id=text("previous_source_id"),
+        previous_source_filename=text("previous_source_filename"),
+        previous_source_taken_at=text("previous_source_taken_at"),
+        previous_delta_minutes=minutes("previous_delta_minutes"),
+        next_source_id=text("next_source_id"),
+        next_source_filename=text("next_source_filename"),
+        next_source_taken_at=text("next_source_taken_at"),
+        next_delta_minutes=minutes("next_delta_minutes"),
+    )
+
+
+def write_plan_json(plans: list[PlanRow], plan_path: Path, source: str) -> Path:
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": 1,
+        "generated_at": local_timestamp(),
+        "source": source,
+        "rows": [row_to_json(row) for row in plans],
+    }
+    plan_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return plan_path
+
+
+def read_plan_json(plan_path: Path) -> list[PlanRow]:
+    payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    if payload.get("version") != 1:
+        raise ValueError(f"unsupported plan version in {plan_path}")
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        raise ValueError(f"plan has no rows list: {plan_path}")
+    return [row_from_json(row) for row in rows if isinstance(row, dict)]
+
+
+def plan_counts(plans: list[PlanRow]) -> dict[str, int | float | None]:
+    planned = sum(1 for row in plans if row.source_id and row.latitude and row.longitude and row.latitude != "ERROR")
+    no_source = sum(1 for row in plans if not row.source_id)
+    warnings = sum(1 for row in plans if row.note and row.note != "NO SOURCE FOUND")
+    previous_sources = sum(1 for row in plans if row.source_rule.startswith("previous"))
+    next_sources = sum(1 for row in plans if row.source_rule.startswith("next"))
+    deltas = [row.delta_minutes for row in plans if row.delta_minutes is not None]
+    return {
+        "missing_items": len(plans),
+        "planned_fills": planned,
+        "no_source": no_source,
+        "warnings": warnings,
+        "previous_sources": previous_sources,
+        "next_sources": next_sources,
+        "max_delta_minutes": max(deltas) if deltas else None,
+    }
+
+
+def plan_examples(plans: list[PlanRow], limit: int = 8) -> list[dict[str, object]]:
+    rows = plans[:limit]
+    warning_rows = [row for row in plans if row.note and row not in rows]
+    combined = rows + warning_rows[: max(0, limit - len(rows))]
+    return [
+        {
+            "filename": row.target_filename,
+            "taken_at": row.target_taken_at,
+            "source_filename": row.source_filename,
+            "source_taken_at": row.source_taken_at,
+            "source_rule": row.source_rule,
+            "delta_minutes": row.delta_minutes,
+            "note": row.note,
+        }
+        for row in combined[:limit]
+    ]
+
+
+def parse_applied_count(applied_result: str) -> int:
+    for line in applied_result.splitlines():
+        if line.startswith("applied="):
+            value = line.split("=", 1)[1].strip()
+            try:
+                return int(value.split(",", 1)[0])
+            except ValueError:
+                return 0
+    return 0
+
+
+def read_run_history(history_path: Path) -> dict[str, object]:
+    if not history_path.exists():
+        return {"version": 1, "runs": []}
+    payload = json.loads(history_path.read_text(encoding="utf-8"))
+    if payload.get("version") != 1 or not isinstance(payload.get("runs"), list):
+        raise ValueError(f"unsupported run history format: {history_path}")
+    return payload
+
+
+def append_run_history(
+    history_path: Path,
+    plans: list[PlanRow],
+    timing: RunTiming,
+    mode: str,
+    human_report_path: Path,
+    plan_json_path: Path | None,
+) -> Path:
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    history = read_run_history(history_path)
+    counts = plan_counts(plans)
+    applied_count = parse_applied_count(timing.applied_result)
+    run = {
+        "started_at": timing.started_at,
+        "finished_at": timing.finished_at,
+        "duration_seconds": round(timing.elapsed_seconds, 2),
+        "duration": format_duration(timing.elapsed_seconds),
+        "cache_mode": timing.cache_mode,
+        "mode": mode,
+        "applied": bool(timing.applied_result),
+        "applied_count": applied_count,
+        "apply_result": timing.applied_result.strip(),
+        "human_report_path": str(human_report_path),
+        "plan_json_path": str(plan_json_path) if plan_json_path else "",
+        **counts,
+        "examples": plan_examples(plans),
+    }
+    history["runs"].append(run)  # type: ignore[index]
+    history_path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    return history_path
 
 
 def build_plan(
     timeline_path: Path,
     missing_path: Path,
-    threshold_minutes: float,
-    require_next_within_threshold: bool,
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[PlanRow]:
@@ -287,16 +546,32 @@ def build_plan(
 
     rows: list[dict[str, object]] = []
     with timeline_path.open(newline="", encoding="utf-8", errors="replace") as handle:
-        for row in csv.DictReader(handle):
+        for original_index, row in enumerate(csv.DictReader(handle)):
             rows.append(
                 {
                     **row,
                     "dt": parse_dt(row["taken_at"]),
                     "is_missing": row["photos_id"] in missing_ids,
+                    "original_index": original_index,
                 }
             )
+    rows.sort(key=lambda row: (row["dt"] or datetime.max, row["original_index"]))  # type: ignore[operator]
 
-    threshold_seconds = threshold_minutes * 60
+    previous_located: list[dict[str, object] | None] = []
+    last_located: dict[str, object] | None = None
+    for row in rows:
+        previous_located.append(last_located)
+        if not row["is_missing"]:
+            last_located = row
+
+    next_located: list[dict[str, object] | None] = [None] * len(rows)
+    next_seen: dict[str, object] | None = None
+    for index in range(len(rows) - 1, -1, -1):
+        row = rows[index]
+        next_located[index] = next_seen
+        if not row["is_missing"]:
+            next_seen = row
+
     plans: list[PlanRow] = []
     for index, row in enumerate(rows):
         if not row["is_missing"]:
@@ -307,32 +582,32 @@ def build_plan(
         if end and (not target_dt or target_dt >= end):
             continue
 
-        previous = next((rows[j] for j in range(index - 1, -1, -1) if not rows[j]["is_missing"]), None)
-        next_row = next((rows[j] for j in range(index + 1, len(rows)) if not rows[j]["is_missing"]), None)
+        previous = previous_located[index]
+        next_row = next_located[index]
 
         source = None
         source_rule = ""
         delta_seconds: float | None = None
+        previous_delta: float | None = None
+        next_delta: float | None = None
+        candidates: list[tuple[float, dict[str, object], str]] = []
 
         if previous and target_dt and previous["dt"]:
             previous_delta = (target_dt - previous["dt"]).total_seconds()  # type: ignore[operator]
-            if 0 <= previous_delta <= threshold_seconds:
-                source = previous
-                source_rule = f"previous <= {threshold_minutes:g} min"
-                delta_seconds = previous_delta
+            if 0 <= previous_delta:
+                candidates.append((previous_delta, previous, "previous closer"))
 
-        if source is None and next_row and target_dt and next_row["dt"]:
+        if next_row and target_dt and next_row["dt"]:
             next_delta = (next_row["dt"] - target_dt).total_seconds()  # type: ignore[operator]
-            if not require_next_within_threshold or next_delta <= threshold_seconds:
-                source = next_row
-                source_rule = "next fallback"
-                delta_seconds = next_delta
+            if 0 <= next_delta:
+                candidates.append((next_delta, next_row, "next closer"))
+
+        if candidates:
+            delta_seconds, source, source_rule = min(candidates, key=lambda item: item[0])
 
         note = ""
         if source is None:
             note = "NO SOURCE FOUND"
-        elif source_rule == "next fallback" and delta_seconds and delta_seconds > threshold_seconds:
-            note = "next fallback is over threshold"
 
         plans.append(
             PlanRow(
@@ -345,6 +620,14 @@ def build_plan(
                 source_taken_at=str(source["taken_at"]) if source else "",
                 delta_minutes=round(delta_seconds / 60, 1) if delta_seconds is not None else None,
                 note=note,
+                previous_source_id=str(previous["photos_id"]) if previous else "",
+                previous_source_filename=str(previous["filename"]) if previous else "",
+                previous_source_taken_at=str(previous["taken_at"]) if previous else "",
+                previous_delta_minutes=round(previous_delta / 60, 1) if previous_delta is not None else None,
+                next_source_id=str(next_row["photos_id"]) if next_row else "",
+                next_source_filename=str(next_row["filename"]) if next_row else "",
+                next_source_taken_at=str(next_row["taken_at"]) if next_row else "",
+                next_delta_minutes=round(next_delta / 60, 1) if next_delta is not None else None,
             )
         )
 
@@ -393,120 +676,49 @@ return "sources=" & (count of sourceIds as text)
     return locations
 
 
-def write_outputs(
-    plans: list[PlanRow],
-    output_dir: Path,
-    suffix: str,
-    timing: RunTiming | None = None,
-) -> tuple[Path, Path, Path]:
+def write_history_report(history_path: Path, output_dir: Path, suffix: str = "") -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = output_dir / f"photos_location_fill_plan{suffix}.csv"
-    html_path = output_dir / f"photos_location_fill_plan{suffix}.html"
-    summary_path = output_dir / f"photos_location_fill_summary{suffix}.txt"
-
-    fields = [
-        "target_filename",
-        "target_taken_at",
-        "source_rule",
-        "source_filename",
-        "source_taken_at",
-        "delta_minutes",
-        "new_latitude",
-        "new_longitude",
-        "target_photos_id",
-        "source_photos_id",
-        "note",
-    ]
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for row in plans:
-            writer.writerow(
-                {
-                    "target_filename": row.target_filename,
-                    "target_taken_at": row.target_taken_at,
-                    "source_rule": row.source_rule,
-                    "source_filename": row.source_filename,
-                    "source_taken_at": row.source_taken_at,
-                    "delta_minutes": row.delta_minutes if row.delta_minutes is not None else "",
-                    "new_latitude": row.latitude,
-                    "new_longitude": row.longitude,
-                    "target_photos_id": row.target_id,
-                    "source_photos_id": row.source_id,
-                    "note": row.note,
-                }
-            )
-
+    html_path = output_dir / (f"photos_location_fill_plan{suffix}.html" if suffix else HUMAN_REPORT_NAME)
+    history = read_run_history(history_path)
+    rows = history.get("runs", [])
     html_rows = []
-    for index, row in enumerate(plans, 1):
-        cls = "warn" if row.note else ""
+    for index, run in enumerate(rows, 1):
+        examples = ", ".join(example.get("filename", "") for example in run.get("examples", [])[:5])
+        status = f"applied {run.get('applied_count', 0)}" if run.get("applied") else "planned only"
+        cls = "warn" if run.get("warnings", 0) else ""
         html_rows.append(
-            "<tr class='{cls}'><td>{index}</td><td>{target_time}</td><td>{target}</td>"
-            "<td>{rule}</td><td>{delta}</td><td>{source_time}</td><td>{source}</td>"
-            "<td>{lat}, {lon}</td><td>{note}</td></tr>".format(
+            "<tr class='{cls}'><td>{index}</td><td>{started}</td><td>{mode}</td>"
+            "<td>{duration}</td><td>{missing}</td><td>{planned}</td><td>{warnings}</td>"
+            "<td>{max_delta}</td><td>{status}</td><td>{examples}</td><td>{cache}</td></tr>".format(
                 cls=cls,
                 index=index,
-                target_time=html.escape(row.target_taken_at),
-                target=html.escape(row.target_filename),
-                rule=html.escape(row.source_rule),
-                delta=html.escape("" if row.delta_minutes is None else str(row.delta_minutes)),
-                source_time=html.escape(row.source_taken_at),
-                source=html.escape(row.source_filename),
-                lat=html.escape(row.latitude),
-                lon=html.escape(row.longitude),
-                note=html.escape(row.note),
+                started=html.escape(str(run.get("started_at", ""))),
+                mode=html.escape(str(run.get("mode", ""))),
+                duration=html.escape(str(run.get("duration", ""))),
+                missing=html.escape(str(run.get("missing_items", ""))),
+                planned=html.escape(str(run.get("planned_fills", ""))),
+                warnings=html.escape(str(run.get("warnings", ""))),
+                max_delta=html.escape(str(run.get("max_delta_minutes", ""))),
+                status=html.escape(status),
+                examples=html.escape(examples),
+                cache=html.escape(str(run.get("cache_mode", ""))),
             )
         )
 
-    planned = sum(1 for row in plans if row.source_id and row.latitude and row.longitude and row.latitude != "ERROR")
-    no_source = sum(1 for row in plans if not row.source_id)
-    warnings = sum(1 for row in plans if row.note and row.note != "NO SOURCE FOUND")
+    last_updated = local_timestamp()
     html_path.write_text(
-        f"""<!doctype html><html><head><meta charset="utf-8"><title>Photos Location Fill Plan</title><style>
+        f"""<!doctype html><html><head><meta charset="utf-8"><title>Photos Location Fill Runs</title><style>
 body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:28px;background:#fbfbf8;color:#1f2933}}
 h1{{font-size:24px;margin:0 0 8px}}p{{color:#52606d}}table{{border-collapse:collapse;width:100%;background:white;border:1px solid #d9e2ec}}
 th,td{{padding:8px 10px;border-bottom:1px solid #e4e7eb;text-align:left;font-size:13px;vertical-align:top}}
-th{{position:sticky;top:0;background:#f1f5f9}}.warn{{background:#fff7ed}}td:nth-child(2),td:nth-child(6){{white-space:nowrap}}td:nth-child(9){{color:#9a3412}}
-</style></head><body><h1>Photos Location Fill Plan</h1>
-<p>Missing: {len(plans)} · Planned fills: {planned} · No source: {no_source} · Warnings: {warnings}</p>
-<table><thead><tr><th>#</th><th>Target time</th><th>Target file</th><th>Rule</th><th>Delta min</th><th>Source time</th><th>Source file</th><th>New location</th><th>Note</th></tr></thead><tbody>{''.join(html_rows)}</tbody></table>
+th{{position:sticky;top:0;background:#f1f5f9}}.warn{{background:#fff7ed}}td:nth-child(2),td:nth-child(4){{white-space:nowrap}}
+</style></head><body><h1>Photos Location Fill Runs</h1>
+<p>One row per completed plan/apply run. Last updated: {html.escape(last_updated)}.</p>
+	<table><thead><tr><th>#</th><th>Started</th><th>Mode</th><th>Duration</th><th>Missing</th><th>Planned</th><th>Warnings</th><th>Max Delta (min)</th><th>Status</th><th>Examples</th><th>Cache</th></tr></thead><tbody>{''.join(html_rows)}</tbody></table>
 </body></html>""",
         encoding="utf-8",
     )
-
-    summary_lines = [
-        "Photos location fill summary",
-        f"Missing items: {len(plans)}",
-        f"Planned fills: {planned}",
-        f"No source: {no_source}",
-        f"Warnings: {warnings}",
-        "",
-        "What this script does:",
-    ]
-    summary_lines.extend(f"- {feature}" for feature in SCRIPT_FEATURES)
-    if timing:
-        summary_lines.extend(
-            [
-                "",
-                "Run timing",
-                f"Started: {timing.started_at}",
-                f"Finished: {timing.finished_at}",
-                f"Duration: {format_duration(timing.elapsed_seconds)}",
-                f"Cache mode: {timing.cache_mode}",
-            ]
-        )
-        if timing.applied_result:
-            summary_lines.append(f"Apply result: {timing.applied_result.strip()}")
-    summary_lines.extend(
-        [
-            "",
-            f"Plan CSV: {csv_path}",
-            f"Plan HTML: {html_path}",
-            "",
-        ]
-    )
-    summary_path.write_text("\n".join(summary_lines), encoding="utf-8")
-    return csv_path, html_path, summary_path
+    return html_path
 
 
 def apply_plan(plans: list[PlanRow]) -> str:
@@ -566,8 +778,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--describe", action="store_true", help="print what this script does and exit")
     parser.add_argument("--apply", action="store_true", help="write planned locations back to Photos")
+    parser.add_argument(
+        "--apply-plan",
+        type=Path,
+        help="write locations from a reviewed JSON plan without rescanning Photos",
+    )
     parser.add_argument("--force-refresh", action="store_true", help="rescan Photos instead of reusing cache")
-    parser.add_argument("--threshold-minutes", type=float, default=10.0)
+    parser.add_argument(
+        "--scan-start",
+        type=parse_date_arg,
+        help="only scan Photos items at or after this time, plus a small lookback window for location context",
+    )
+    parser.add_argument(
+        "--scan-lookback-hours",
+        type=float,
+        default=24.0,
+        help="hours before --scan-start to scan for previous located context",
+    )
     parser.add_argument(
         "--start",
         type=parse_date_arg,
@@ -577,11 +804,6 @@ def main(argv: list[str] | None = None) -> int:
         "--end",
         type=parse_date_arg,
         help="only plan/apply missing items taken before this time (YYYY-MM-DD or 'YYYY-MM-DD HH:MM:SS')",
-    )
-    parser.add_argument(
-        "--require-next-within-threshold",
-        action="store_true",
-        help="skip next-photo fallback if the next photo is also outside the threshold",
     )
     parser.add_argument("--work-dir", type=Path, default=DEFAULT_WORK_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -595,44 +817,74 @@ def main(argv: list[str] | None = None) -> int:
     started_at = local_timestamp()
     started = time.perf_counter()
     applied_result = ""
+    plan_json_path: Path | None = args.apply_plan
+    mode = "apply-plan" if args.apply_plan else "plan"
 
-    timeline_path, missing_path, reused_cache = export_timeline_and_missing(args.work_dir, args.force_refresh)
-    plans = build_plan(
-        timeline_path,
-        missing_path,
-        args.threshold_minutes,
-        args.require_next_within_threshold,
-        args.start,
-        args.end,
-    )
-    locations = export_source_locations(plans, args.work_dir)
-    for row in plans:
-        if row.source_id:
-            row.latitude, row.longitude = locations.get(row.source_id, ("", ""))
-            if row.latitude == "ERROR":
-                row.note = f"SOURCE LOCATION READ ERROR: {row.longitude}"
-
-    if args.apply:
+    if args.apply_plan:
+        plans = read_plan_json(args.apply_plan)
         applied_result = apply_plan(plans)
+        reused_cache = True
+    else:
+        timeline_path, missing_path, reused_cache = export_timeline_and_missing(
+            args.work_dir,
+            args.force_refresh,
+            args.scan_start,
+            args.scan_lookback_hours,
+        )
+        plan_start = args.start or args.scan_start
+        plans = build_plan(
+            timeline_path,
+            missing_path,
+            plan_start,
+            args.end,
+        )
+        locations = export_source_locations(plans, args.work_dir)
+        for row in plans:
+            if row.source_id:
+                row.latitude, row.longitude = locations.get(row.source_id, ("", ""))
+                if row.latitude == "ERROR":
+                    row.note = f"SOURCE LOCATION READ ERROR: {row.longitude}"
+        source_label = (
+            f"Photos timeline scan from {args.scan_start:%Y-%m-%d %H:%M:%S}"
+            if args.scan_start
+            else "Photos timeline scan"
+        )
+        plan_json_path = write_plan_json(plans, args.work_dir / PLAN_JSON_NAME, source_label)
+        print(f"Plan JSON: {plan_json_path}")
+
+        if args.apply:
+            applied_result = apply_plan(plans)
+            mode = "plan-and-apply"
 
     elapsed_seconds = time.perf_counter() - started
     timing = RunTiming(
         started_at=started_at,
         finished_at=local_timestamp(),
         elapsed_seconds=elapsed_seconds,
-        cache_mode="reused cache" if reused_cache else "refreshed Photos timeline",
+        cache_mode="reviewed plan" if args.apply_plan else "reused cache" if reused_cache else "refreshed Photos timeline",
         applied_result=applied_result,
     )
 
-    csv_path, html_path, summary_path = write_outputs(plans, args.output_dir, args.suffix, timing)
-    print(f"Plan CSV: {csv_path}")
-    print(f"Plan HTML: {html_path}")
-    print(f"Summary: {summary_path}")
+    html_path = args.output_dir / (f"photos_location_fill_plan{args.suffix}.html" if args.suffix else HUMAN_REPORT_NAME)
+    history_path = append_run_history(
+        args.work_dir / RUN_HISTORY_NAME,
+        plans,
+        timing,
+        mode=mode,
+        human_report_path=html_path,
+        plan_json_path=plan_json_path,
+    )
+    html_path = write_history_report(history_path, args.output_dir, args.suffix)
+    print(f"Human report: {html_path}")
+    print(f"Run history: {history_path}")
 
-    if args.apply:
+    if args.apply or args.apply_plan:
         print(applied_result)
     else:
-        print("Dry run only. Re-run with --apply to write locations to Photos.")
+        print(
+            "Dry run only. Review the HTML report, then re-run with "
+            "--apply-plan <plan-json> to write locations to Photos."
+        )
     print(f"Started: {timing.started_at}")
     print(f"Finished: {timing.finished_at}")
     print(f"Duration: {format_duration(timing.elapsed_seconds)}")

@@ -53,6 +53,9 @@ class WorkflowsTest(unittest.TestCase):
         self.assertIn("mt preflight-run", " ".join(workflow["preflight"]))
         self.assertIn("mt status", " ".join(workflow["preflight"]))
         self.assertIn("mt doctor", " ".join(workflow["preflight"]))
+        self.assertIn("mt hif-prune", workflow["default_behavior"])
+        self.assertIn("aggressive", workflow["default_behavior"])
+        self.assertIn("mt hif-prune", " ".join(workflow["preflight"]))
 
     def test_summary_includes_chinese_workflow_names(self):
         summary = render_workflow_summary()

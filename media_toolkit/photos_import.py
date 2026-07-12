@@ -4,7 +4,22 @@ import subprocess
 import sys
 from pathlib import Path
 
-from media_toolkit.final_hif_archive import EXPORT_EXTS
+from media_toolkit.final_hif_archive import EXPORT_EXTS, child_dir_case_insensitive
+
+
+def _collect_export_files_with_pixcake_priority(export_dir: Path) -> list[Path]:
+    selected: dict[str, Path] = {}
+    pixcake_dir = child_dir_case_insensitive(export_dir, "Pixcake")
+    if pixcake_dir.is_dir():
+        for path in sorted(pixcake_dir.iterdir(), key=lambda item: item.name.lower()):
+            if path.is_file() and path.suffix.lower() in EXPORT_EXTS:
+                selected[path.stem.lower()] = path
+
+    for path in sorted(export_dir.iterdir(), key=lambda item: item.name.lower()):
+        if not path.is_file() or path.suffix.lower() not in EXPORT_EXTS:
+            continue
+        selected.setdefault(path.stem.lower(), path)
+    return sorted(selected.values(), key=lambda path: path.name.lower())
 
 
 def collect_photos_export_files(base_dir: Path) -> list[Path]:
@@ -19,11 +34,7 @@ def collect_photos_export_files(base_dir: Path) -> list[Path]:
     for export_dir in export_dirs:
         if not export_dir.is_dir():
             continue
-        files.extend(
-            path
-            for path in export_dir.iterdir()
-            if path.is_file() and path.suffix.lower() in EXPORT_EXTS
-        )
+        files.extend(_collect_export_files_with_pixcake_priority(export_dir))
     return sorted(files, key=lambda path: path.name.lower())
 
 

@@ -21,6 +21,10 @@ class CommandRegistryTest(unittest.TestCase):
         self.assertIn("finalize", commands)
         self.assertTrue(commands["finalize"]["requires_destination"])
         self.assertIn("copy", commands["finalize"]["side_effects"])
+        self.assertIn("hif-prune", commands)
+        self.assertTrue(commands["hif-prune"]["supports_dry_run"])
+        self.assertIn("delete", commands["hif-prune"]["side_effects"])
+        self.assertIn("write-manifest", commands["hif-prune"]["side_effects"])
         self.assertTrue(commands["organize"]["supports_dry_run"])
         self.assertIn("move", commands["organize"]["side_effects"])
         self.assertTrue(commands["fill-locations"]["supports_dry_run"])
@@ -28,6 +32,10 @@ class CommandRegistryTest(unittest.TestCase):
             "optional-photos-update",
             commands["fill-locations"]["side_effects"],
         )
+        self.assertIn("--apply-plan", commands["fill-locations"]["options_with_values"])
+        self.assertIn("--scan-start", commands["fill-locations"]["options_with_values"])
+        self.assertIn("--scan-lookback-hours", commands["fill-locations"]["options_with_values"])
+        self.assertNotIn("--threshold-minutes", commands["fill-locations"]["options_with_values"])
 
     def test_commands_entrypoint_is_package_first(self):
         command = resolve_command("commands")

@@ -40,6 +40,17 @@ COMMANDS = (
         requires_destination=True,
     ),
     Command(
+        canonical="hif-prune",
+        aliases=(),
+        script_name="hif_prune.py",
+        help="Delete high-confidence redundant source-side HIF previews after finalization.",
+        module_name="media_toolkit.commands.hif_prune",
+        default_cwd=True,
+        options_with_values=("--mode", "--scene", "--manifest"),
+        side_effects=("delete", "write-manifest"),
+        supports_dry_run=True,
+    ),
+    Command(
         canonical="organize",
         aliases=("o", "org"),
         script_name="organize.py",
@@ -57,7 +68,9 @@ COMMANDS = (
         help="Plan or apply Apple Photos missing-location fixes.",
         module_name="media_toolkit.commands.fill_locations",
         options_with_values=(
-            "--threshold-minutes",
+            "--apply-plan",
+            "--scan-start",
+            "--scan-lookback-hours",
             "--start",
             "--end",
             "--work-dir",

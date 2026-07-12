@@ -30,6 +30,17 @@ def find_directories_with_raw(root: Path) -> list[Path]:
     return sorted(found)
 
 
+def child_dir_case_insensitive(parent: Path, name: str) -> Path:
+    desired = name.lower()
+    try:
+        for child in parent.iterdir():
+            if child.is_dir() and child.name.lower() == desired:
+                return child
+    except (FileNotFoundError, PermissionError):
+        pass
+    return parent / name
+
+
 def export_scan_directories(base_dir: Path) -> list[Path]:
     base_dir = Path(base_dir)
     export_dirs: list[Path] = []
@@ -43,7 +54,9 @@ def export_scan_directories(base_dir: Path) -> list[Path]:
             seen.add(real)
             export_dirs.append(path)
 
-    add_dir(base_dir / "raw" / "Export")
+    root_export = base_dir / "raw" / "Export"
+    add_dir(root_export)
+    add_dir(child_dir_case_insensitive(root_export, "Pixcake"))
     for group_name in ("portrait",):
         group_root = base_dir / group_name
         if not group_root.exists():
@@ -51,7 +64,9 @@ def export_scan_directories(base_dir: Path) -> list[Path]:
         try:
             for child in group_root.iterdir():
                 if child.is_dir():
-                    add_dir(child / "raw" / "Export")
+                    export_dir = child / "raw" / "Export"
+                    add_dir(export_dir)
+                    add_dir(child_dir_case_insensitive(export_dir, "Pixcake"))
         except PermissionError:
             pass
     return export_dirs
@@ -204,12 +219,21 @@ def process_files(base_dir: Path, destination_dir: Path, *, dry_run: bool = Fals
     print(f"\n{step_title:-<50}")
     try:
         if dry_run:
+            would_copy_count = 0
+            would_skip_count = 0
             for file_path in matching_files:
                 destination = destination_dir / file_path.name
-                action = "would skip existing" if destination.exists() else "would copy"
+                if destination.exists():
+                    action = "would skip existing"
+                    would_skip_count += 1
+                else:
+                    action = "would copy"
+                    would_copy_count += 1
                 print(f"   {action}: {display_relative(base_dir, file_path)} -> {destination}")
             print(f"\n{'SUMMARY':-<50}")
-            print(f"   Would copy: {len(matching_files)} files")
+            print(f"   Would copy: {would_copy_count} files")
+            if would_skip_count:
+                print(f"   Would skip existing: {would_skip_count} files")
             print(f"   Destination: {destination_dir}")
             return True
 
@@ -240,7 +264,7 @@ def process_files(base_dir: Path, destination_dir: Path, *, dry_run: bool = Fals
         if failed_count:
             print(f"   Failed to copy: {failed_count} files")
         print(f"   Destination: {destination_dir}")
-        return copied_count > 0
+        return copied_count > 0 or (skipped_count > 0 and failed_count == 0)
     except Exception as exc:
         print(f"Error creating destination directory: {exc}")
         return False

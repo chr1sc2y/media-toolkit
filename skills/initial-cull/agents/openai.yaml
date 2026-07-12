@@ -1,0 +1,7 @@
+interface:
+  display_name: "初筛"
+  short_description: "整理拍摄目录，分组、评级，并默认写入 RAW 证据驱动的 LR 粗修 XMP。"
+  default_prompt: "Use $initial-cull to organize this photo directory, separate portraits and panoramas, rate every RAW, write LR rough-edit XMP unless I ask for initial-cull only, and generate final contact sheets."
+
+policy:
+  allow_implicit_invocation: true

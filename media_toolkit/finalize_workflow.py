@@ -14,7 +14,22 @@ def copy_destination_is_inside_source(source: Path, destination: Path) -> bool:
 
 
 def find_finalize_directories(root: Path) -> list[Path]:
-    return final_hif_archive.find_directories_with_raw(root)
+    directories = final_hif_archive.find_directories_with_raw(root)
+    selected: list[Path] = []
+    for directory in directories:
+        if any(_is_group_child_of(directory, parent) for parent in selected):
+            continue
+        selected.append(directory)
+    return selected
+
+
+def _is_group_child_of(directory: Path, parent: Path) -> bool:
+    try:
+        relative = directory.relative_to(parent)
+    except ValueError:
+        return False
+    parts = relative.parts
+    return len(parts) >= 2 and parts[0] in {"portrait", "panorama"}
 
 
 def finalize_directory(

@@ -89,7 +89,7 @@ class FinalizeTest(unittest.TestCase):
                 ["DSC0001.HIF", "DSC0002.HIF"],
             )
 
-    def test_finalize_skips_existing_explicit_destination_files(self):
+    def test_finalize_skips_existing_explicit_destination_files_as_success(self):
         with TemporaryDirectory() as tmp:
             tmp_root = Path(tmp)
             root = tmp_root / "photos"
@@ -105,7 +105,7 @@ class FinalizeTest(unittest.TestCase):
             )
             (root / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
 
-            self.assertFalse(
+            self.assertTrue(
                 self.quiet_call(
                     finalize.finalize_directory,
                     root, copy_to=destination, scene="ordering-test"
@@ -189,6 +189,48 @@ class FinalizeTest(unittest.TestCase):
             self.assertEqual(
                 [path.name for path in exports],
                 ["DSC0001.jpg", "DSC0002.JPG", "DSC0003.jpeg"],
+            )
+
+    def test_collect_photos_exports_prefers_pixcake_over_same_named_export(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ordinary = root / "raw" / "Export" / "DSC0001.jpg"
+            pixcake = root / "raw" / "Export" / "Pixcake" / "DSC0001.jpg"
+            other = root / "raw" / "Export" / "DSC0002.jpg"
+            for path, text in (
+                (ordinary, "ordinary"),
+                (pixcake, "pixcake"),
+                (other, "other"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+
+            exports = finalize.collect_photos_export_files(root)
+
+            resolved_root = root.resolve()
+            self.assertEqual(
+                [path.relative_to(resolved_root).as_posix() for path in exports],
+                [
+                    "raw/Export/Pixcake/DSC0001.jpg",
+                    "raw/Export/DSC0002.jpg",
+                ],
+            )
+
+    def test_collect_photos_exports_accepts_pixcake_directory_case(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ordinary = root / "raw" / "Export" / "DSC0001.jpg"
+            pixcake = root / "raw" / "Export" / "PixCake" / "DSC0001.jpg"
+            for path, text in ((ordinary, "ordinary"), (pixcake, "pixcake")):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+
+            exports = finalize.collect_photos_export_files(root)
+
+            resolved_root = root.resolve()
+            self.assertEqual(
+                [path.relative_to(resolved_root).as_posix() for path in exports],
+                ["raw/Export/PixCake/DSC0001.jpg"],
             )
 
     def test_photos_dry_run_lists_exports_without_osascript(self):
@@ -286,6 +328,83 @@ class FinalizeTest(unittest.TestCase):
             )
 
             self.assertFalse(destination.exists())
+
+    def test_finalize_dry_run_summary_counts_existing_destination_files(self):
+        with TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "sd" / "DCIM" / "101MSDCF"
+            (root / "raw" / "Export").mkdir(parents=True)
+            (root / "hif").mkdir(parents=True)
+            destination.mkdir(parents=True)
+            for stem in ("DSC0001", "DSC0002"):
+                (root / "raw" / "Export" / f"{stem}.jpg").write_text(
+                    "export", encoding="utf-8"
+                )
+                (root / "hif" / f"{stem}.HIF").write_text("hif", encoding="utf-8")
+            (destination / "DSC0001.HIF").write_text("existing", encoding="utf-8")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout), redirect_stderr(StringIO()):
+                exit_code = finalize.main(
+                    [str(root), "--copy-to", str(destination), "--dry-run", "--hif-only"]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("Would copy: 1 files", stdout.getvalue())
+            self.assertIn("Would skip existing: 1 files", stdout.getvalue())
+
+    def test_finalize_defaults_to_recursive_subdirectories(self):
+        with TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "sd" / "DCIM" / "101MSDCF"
+            scene = root / "lake-valley"
+            (scene / "raw" / "Export").mkdir(parents=True)
+            (scene / "hif").mkdir(parents=True)
+            (scene / "raw" / "Export" / "DSC0001.jpg").write_text(
+                "export", encoding="utf-8"
+            )
+            (scene / "hif" / "DSC0001.HIF").write_text("hif", encoding="utf-8")
+
+            self.assertEqual(
+                self.quiet_call(
+                    finalize.main,
+                    [str(root), "--copy-to", str(destination), "--hif-only"],
+                ),
+                0,
+            )
+
+            self.assertEqual((destination / "DSC0001.HIF").read_text(), "hif")
+
+    def test_recursive_finalize_does_not_process_root_portrait_twice(self):
+        with TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            root = tmp_root / "photos"
+            destination = tmp_root / "sd" / "DCIM" / "101MSDCF"
+            for stem in ("DSC0001", "DSC0002"):
+                export = root / "portrait" / "1" / "raw" / "Export" / f"{stem}.jpg"
+                hif = root / "portrait" / "1" / "hif" / f"{stem}.HIF"
+                export.parent.mkdir(parents=True, exist_ok=True)
+                hif.parent.mkdir(parents=True, exist_ok=True)
+                export.write_text("export", encoding="utf-8")
+                hif.write_text("hif", encoding="utf-8")
+            (root / "raw" / "Export").mkdir(parents=True)
+            (root / "hif").mkdir(parents=True)
+            (root / "raw" / "Export" / "DSC0003.jpg").write_text(
+                "export", encoding="utf-8"
+            )
+            (root / "hif" / "DSC0003.HIF").write_text("hif", encoding="utf-8")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout), redirect_stderr(StringIO()):
+                exit_code = finalize.main(
+                    [str(root), "--copy-to", str(destination), "--hif-only", "--dry-run"]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stdout.getvalue().count("FINAL HIF COPIER"), 1)
+            self.assertIn("Would copy: 3 files", stdout.getvalue())
 
     def test_main_defaults_photos_album_to_sony(self):
         with TemporaryDirectory() as tmp:

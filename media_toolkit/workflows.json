@@ -8,13 +8,14 @@
       "primary_command": "mt organize <photo-dir> && mt raw-analyze <photo-dir> --ratings \">=3\" && mt lr-plan <photo-dir> --ratings \">=3\" && mt lr-apply <photo-dir> --ratings \">=3\"",
       "source_path_required": true,
       "destination_path_required": false,
-      "default_behavior": "Organize media, group portrait/panorama frames, rate every RAW, build review contact sheets, then write Lightroom rough-edit XMP for >=3-star files unless the user explicitly asks for initial-cull only.",
+      "default_behavior": "Organize media, optionally classify visually mixed travel photos into 4-5 broad source-side scene categories including portrait and panorama, group portrait/panorama frames, rate every RAW, build review contact sheets, then write Lightroom rough-edit XMP for >=3-star files unless the user explicitly asks for initial-cull only.",
       "preflight": [
         "Confirm the source photo directory exists.",
         "Run mt status <photo-dir> --json to classify the current workflow state.",
         "Run mt doctor <photo-dir> before changing files.",
         "Run mt organize with --dry-run first when inspecting a new import or uncertain tree.",
         "Report that mt organize moves files into raw/ and hif/ buckets before applying it.",
+        "When scene classification is useful, use model visual judgment during initial cull to create broad source-side folders; keep 4-5 total categories including portrait and panorama, and move associated RAW/HIF/XMP/Export files together.",
         "Verify that the command is operating on the intended photo directory, not this repository."
       ],
       "must_not": [
@@ -37,23 +38,29 @@
       "hif_only_command": "mt finalize <photo-dir> --copy-to <destination-dir> --hif-only --scene <scene>",
       "source_path_required": true,
       "destination_path_required": true,
-      "default_behavior": "Use Lightroom exports as the final pick list, copy matching original HIF previews to the explicit destination, and import Lightroom export JPGs into Apple Photos unless --hif-only is passed.",
+      "default_behavior": "Use Lightroom exports as the final pick list, copy matching original HIF previews to the explicit destination, and import Lightroom export JPGs into Apple Photos unless --hif-only is passed. Then run mt hif-prune <photo-dir> --mode aggressive --scene <scene> to delete high-confidence redundant source-side HIF previews while preserving exported picks, RAW-backed HIF files, and panorama source HIF files. Finalize should default to recursive scanning so eligible scene, portrait, and panorama subdirectories with raw/ trees are included. If Export/Pixcake exists, Pixcake files take priority over same-stem direct Export files for Photos import/reporting.",
       "must_not": [
         "Do not infer a destination from a single provided path.",
         "Do not use the source directory, a child directory, featured/, ~/Downloads/featured, or a remembered path as the destination.",
         "Do not copy Lightroom export JPGs to the HIF destination.",
         "Do not copy panorama source-frame HIF files from panorama/<n>/hif/.",
-        "Do not delete destination contents."
+        "Do not delete destination contents.",
+        "Do not delete HIF files whose stems are selected by Lightroom exports.",
+        "Do not delete HIF files that still have matching RAW files.",
+        "Do not delete panorama source-frame HIF files from panorama/<n>/hif/."
       ],
       "preflight": [
         "Confirm source photo directory exists.",
-        "Run mt preflight-run finalize <photo-dir> --copy-to <destination-dir> --scene <scene> for the full read-only GO/NO-GO check.",
+        "Run mt preflight-run finalize with recursive scanning by default for the full read-only GO/NO-GO preflight.",
+        "When the source contains scene subdirectories such as lake-valley/, portrait/, or snow-top/, include all eligible subdirectories with raw/ trees during preflight and finalization.",
+        "When Export/Pixcake exists, prefer Pixcake files over same-stem direct Export files for Photos import/reporting; copy the matching original HIF once by stem.",
         "Run mt status <photo-dir> --workflow finalize --copy-to <destination-dir> --json to classify finalize readiness.",
         "Run mt doctor <photo-dir> --workflow finalize --copy-to <destination-dir> before copying HIF files.",
         "Require --copy-to and verify it is outside the source photo directory.",
-        "Use raw/Export and portrait/<n>/raw/Export stems as the HIF copy list.",
+        "Use raw/Export, portrait/<n>/raw/Export, and recursive scene-subdirectory export stems as the HIF copy list.",
         "Use --dry-run when validating a batch before copying HIF files or importing into Apple Photos.",
-        "Use --photos-dry-run only when intentionally copying HIF files while validating the Photos import list."
+        "Use --photos-dry-run only when intentionally copying HIF files while validating the Photos import list.",
+        "After a successful real finalize run, run mt hif-prune <photo-dir> --mode aggressive --scene <scene> so redundant HIF-only repeats are deleted and hif_prune_manifest.json records the decisions."
       ]
     },
     {
