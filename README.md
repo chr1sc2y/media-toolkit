@@ -193,6 +193,18 @@ mt png-to-jpg /path/to/images
 mt batch-report /path/to/photos
 ```
 
+Portrait candidates rated 3–5 can use a reviewed per-image Select Subject layer:
+
+```bash
+mt subject-plan /path/to/shoot --ratings ">=3" --output subject_plan.tsv --preview-dir /tmp/mt-subject-review
+mt subject-apply /path/to/shoot --plan subject_plan_reviewed.tsv --dry-run
+mt subject-apply /path/to/shoot --plan subject_plan_reviewed.tsv
+```
+
+The Agent reviews every generated HIF/HEIF/HEIC preview and supplies different
+values per image. Lightroom Classic computes the actual AI subject pixels after
+metadata is read; the tool does not run its own segmentation model.
+
 The portrait and panorama organizers generate one overview inside each numeric
 group, such as `portrait/1/_contact_sheet.jpg` or
 `panorama/2/_contact_sheet.jpg`; no aggregate sheet is kept in either parent.

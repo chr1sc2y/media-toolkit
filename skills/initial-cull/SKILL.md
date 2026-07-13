@@ -73,9 +73,12 @@ raw/DSC0001.ARW	4
 portrait/1/raw/DSC0002.ARW	3
 ```
 
-Every remaining RAW must appear once. Ratings are integers from 0 through 5:
-4-5 strong selects, 3 secondary final candidates, 0-2 skips. Use at most one
-3-star alternate for a near-duplicate group unless it has clear backup value.
+Every remaining RAW must appear once. Ratings are integers from 0 through 5.
+Keep a strict 4- and 5-star bar: 5 is exceptional and rare; 4 is already a
+clearly strong final candidate. Use 3 as a deliberately broad review pool for
+plausible, uncertain, or post-edit-dependent candidates. Near-duplicates may
+all receive 3 when expression, pose, sharpness, framing, or timing has meaningful
+differences. Reserve 0-2 for clear failures or repeats with no comparison value.
 
 Validate and apply the reviewed manifest:
 
@@ -107,7 +110,35 @@ apply `travel-rich` recursively to portraits merely because they are `>=3`.
 Keep the generated `plan_style` column unchanged: `lr-apply` rejects a profile
 whose registered plan style is incompatible with the reviewed plan.
 
-5. Generate the allowed final HIF-only overviews:
+5. Run the full portrait treatment for all 3-5-star portraits, then prepare the
+additional per-image subject layer:
+
+```bash
+mt subject-plan "<photo-dir>" --ratings ">=3" --output subject_plan.tsv --preview-dir /tmp/mt-subject-review
+```
+
+Open every individual HIF/HEIF/HEIC preview in `/tmp/mt-subject-review`; the
+contact sheet alone is insufficient. Copy the template to
+`subject_plan_reviewed.tsv` and fill every eligible portrait row independently.
+Use RAW histogram columns only as supporting headroom evidence. Set `action` to
+`apply` with separately judged Exposure, Contrast, Highlights, Shadows, Whites,
+and Blacks, or use an all-zero `skip` when the subject is already well exposed.
+Do not reuse one adjustment across the batch. Preserve contrast and the black
+anchor; do not raise Shadows heavily by default.
+
+Review and apply the completed plan:
+
+```bash
+mt subject-apply "<photo-dir>" --plan subject_plan_reviewed.tsv --ratings ">=3" --dry-run
+mt subject-apply "<photo-dir>" --plan subject_plan_reviewed.tsv --ratings ">=3"
+```
+
+This adds or replaces only `Media Toolkit Subject Lift`. Lightroom, not Media
+Toolkit, computes the Select Subject pixels. After reading metadata, run
+`Update All` for any pending AI masks and visually inspect the result. Face
+retouching remains manual.
+
+6. Generate the allowed final HIF-only overviews:
 
 ```bash
 mt contact-sheet "<photo-dir>" --hif-only --exclude-dir portrait --exclude-dir panorama --output /tmp/mt-root-sheet --final-overview "<photo-dir>/_contact_sheet.jpg"
@@ -119,7 +150,7 @@ Repeat the matching command for every numeric group. The portrait/panorama
 organizers do this automatically after moving files. Remove temporary plan/stat
 files only after the XMP result has passed verification.
 
-6. Verify strictly:
+7. Verify strictly:
 
 ```bash
 mt verify-cull "<photo-dir>"

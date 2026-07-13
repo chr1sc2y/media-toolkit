@@ -5,17 +5,19 @@
       "id": "initial-cull",
       "name": "Initial cull",
       "cn_name": "初筛",
-      "primary_command": "mt organize <photo-dir> && mt ratings-apply <photo-dir> --manifest ratings.tsv && mt lr-plan <photo-dir> --ratings \">=3\" --output lr_plan.tsv && mt lr-apply <photo-dir> --ratings \">=3\" --plan lr_plan_reviewed.tsv && mt verify-cull <photo-dir>",
+      "primary_command": "mt organize <photo-dir> && mt ratings-apply <photo-dir> --manifest ratings.tsv && mt lr-plan <photo-dir> --ratings \">=3\" --output lr_plan.tsv && mt lr-apply <photo-dir> --ratings \">=3\" --plan lr_plan_reviewed.tsv && mt subject-plan <photo-dir> --ratings \">=3\" --output subject_plan.tsv --preview-dir /tmp/mt-subject-review && mt subject-apply <photo-dir> --plan subject_plan_reviewed.tsv --dry-run && mt subject-apply <photo-dir> --plan subject_plan_reviewed.tsv && mt verify-cull <photo-dir>",
       "source_path_required": true,
       "destination_path_required": false,
-      "default_behavior": "Organize a new shoot, use reviewed manifests for portrait/panorama grouping and complete 0-5 RAW ratings, build HIF-only contact sheets, then optionally apply a reviewed RAW-histogram Lightroom plan to >=3-star candidates. Strict verification checks XMP ratings and workflow markers.",
+      "default_behavior": "Organize a new shoot, use reviewed manifests for portrait/panorama grouping and complete 0-5 RAW ratings with a strict 4- and 5-star bar and a broad 3-star review pool. Build HIF-only contact sheets, optionally apply a reviewed RAW-histogram Lightroom plan, and review every individual HIF/HEIF/HEIC preview for a per-image Select Subject plan on all 3-5-star portraits. Strict verification checks XMP ratings and workflow markers.",
       "preflight": [
         "Confirm the source photo directory exists.",
         "Run mt status <photo-dir> --json.",
         "Run mt doctor <photo-dir>.",
         "Run mt organize <photo-dir> --dry-run --verbose and review every planned move; destination collisions are hard errors.",
         "Create a complete path/rating TSV, then run mt ratings-apply <photo-dir> --manifest ratings.tsv --dry-run before writing XMP.",
-        "Review lr_plan.tsv by path, remove rows incompatible with the selected scene profile, save lr_plan_reviewed.tsv, then pass it to mt lr-apply <photo-dir> --plan lr_plan_reviewed.tsv."
+        "Review lr_plan.tsv by path, remove rows incompatible with the selected scene profile, save lr_plan_reviewed.tsv, then pass it to mt lr-apply <photo-dir> --plan lr_plan_reviewed.tsv.",
+        "Run mt subject-plan <photo-dir> --ratings \">=3\" and open every generated portrait preview; fill every row in subject_plan_reviewed.tsv independently.",
+        "Run mt subject-apply <photo-dir> --plan subject_plan_reviewed.tsv --dry-run before writing the reviewed Select Subject corrections."
       ],
       "must_not": [
         "Do not delete rejected RAW or HIF files without a separate explicit request.",
@@ -23,11 +25,13 @@
         "Do not import Lightroom exports into Apple Photos.",
         "Do not use Lightroom Export JPG files as culling previews.",
         "Do not hand-move ordinary scenes into ad-hoc folders; only portrait and panorama grouping have reviewed manifest movers.",
-        "Do not claim automatic ISO, lens, subject, white-balance, crop, Upright, sharpening, or noise-reduction tuning."
+        "Do not claim automatic ISO, lens, white-balance, crop, Upright, sharpening, or noise-reduction tuning.",
+        "Do not claim Media Toolkit computes Select Subject pixels; Lightroom computes the AI mask after metadata is read."
       ],
       "agent_notes": [
         "Use HIF/HEIF/HEIC as visual previews and RAW statistics as exposure evidence.",
         "Group portraits by person and panorama frames by sequence using reviewed manifests.",
+        "Keep the 4- and 5-star bar strict, broaden the 3-star pool when near-duplicates have meaningful differences, and run the full portrait treatment for all 3-5-star portraits.",
         "Use mt verify-cull <photo-dir>; --legacy-structure-only is for old folders, not new culls."
       ]
     },

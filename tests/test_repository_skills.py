@@ -80,6 +80,22 @@ class RepositorySkillTests(unittest.TestCase):
         self.assertNotIn('portrait/_contact_sheet.jpg', text)
         self.assertNotIn('panorama/_contact_sheet.jpg', text)
 
+    def test_initial_cull_requires_reviewed_per_image_subject_lifts(self) -> None:
+        text = (SKILLS_ROOT / "initial-cull/SKILL.md").read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        for snippet in (
+            "mt subject-plan",
+            "mt subject-apply",
+            "Media Toolkit Subject Lift",
+            "individual HIF/HEIF/HEIC preview",
+            "all 3-5-star portraits",
+            "strict 4- and 5-star bar",
+            "meaningful differences",
+            "Update All",
+        ):
+            self.assertIn(snippet, normalized)
+        self.assertNotIn("at most one\n3-star alternate", text)
+
     def test_extract_skill_has_safe_plan_apply_and_separate_delete_gate(self) -> None:
         text = (SKILLS_ROOT / "extract-feature/SKILL.md").read_text(encoding="utf-8")
         self.assertIn('mt preflight-run finalize "<photo-dir>"', text)

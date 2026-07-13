@@ -42,6 +42,8 @@ class MediaToolkitCliTest(unittest.TestCase):
         self.assertEqual(resolve_command("ratings-apply").script_name, "ratings_apply.py")
         self.assertEqual(resolve_command("lr-plan").script_name, "lr_plan.py")
         self.assertEqual(resolve_command("lr-apply").script_name, "lr_apply.py")
+        self.assertEqual(resolve_command("subject-plan").script_name, "subject_plan.py")
+        self.assertEqual(resolve_command("subject-apply").script_name, "subject_apply.py")
         self.assertEqual(resolve_command("styles").script_name, "styles.py")
         self.assertEqual(resolve_command("learn-style").script_name, "learn_style.py")
         self.assertEqual(resolve_command("rawpy-render").script_name, "rawpy_render.py")
@@ -218,6 +220,17 @@ class MediaToolkitCliTest(unittest.TestCase):
         argv = build_script_argv(command, ["/tmp/photos"], interactive=False)
 
         self.assertEqual(argv, ["verify_cull.py", "/tmp/photos"])
+
+    def test_subject_commands_treat_option_values_as_non_positional(self):
+        for name, args in (
+            ("subject-plan", ["--output", "/tmp/plan.tsv", "--preview-dir", "/tmp/previews"]),
+            ("subject-apply", ["--plan", "/tmp/reviewed.tsv", "--ratings", ">=3"]),
+        ):
+            command = resolve_command(name)
+            output = StringIO()
+            argv = build_script_argv(command, args, interactive=False, output=output)
+            self.assertIsNone(argv)
+            self.assertIn("directory required", output.getvalue())
 
     def test_raw_analyze_value_options_do_not_count_as_directory(self):
         command = resolve_command("raw-analyze")

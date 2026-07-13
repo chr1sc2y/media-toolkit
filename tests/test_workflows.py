@@ -90,6 +90,16 @@ class WorkflowsTest(unittest.TestCase):
         self.assertIn("mt doctor", detail)
         self.assertIn("agent notes:", detail)
 
+    def test_initial_cull_workflow_includes_per_image_portrait_subject_review(self):
+        workflow = get_workflow("initial-cull")
+        all_text = " ".join(str(value) for value in workflow.values())
+
+        self.assertIn("mt subject-plan", all_text)
+        self.assertIn("mt subject-apply", all_text)
+        self.assertIn("strict 4- and 5-star", all_text)
+        self.assertIn("broad 3-star", all_text)
+        self.assertIn("individual HIF/HEIF/HEIC", all_text)
+
     def test_learn_style_points_to_style_registry(self):
         detail = render_workflow_detail(get_workflow("learn-style"))
 

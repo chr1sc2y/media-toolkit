@@ -36,9 +36,9 @@ verify-cull。不要删除 RAW/HIF，不要归档，不要导入 Photos。
 
 Every RAW path appears exactly once in `ratings.tsv`.
 
-- 5: strongest publish/refine image.
-- 4: clear keeper and refinement candidate.
-- 3: useful secondary candidate with distinct backup value.
+- 5: exceptional and rare; an outstanding final image.
+- 4: clearly strong and already at a high final-candidate bar.
+- 3: broad review pool for plausible, uncertain, or post-edit-dependent candidates.
 - 2: ordinary record, weak composition, or near duplicate.
 - 0-1: obvious technical or moment failure.
 
@@ -46,9 +46,9 @@ Judge landscapes by light, atmosphere, foreground/midground/background depth,
 leading lines, subject clarity, and uniqueness. Judge portraits/animals by eyes,
 expression, pose, face visibility, focus, separation, and background cleanliness.
 
-Group near-duplicates before rating. Usually keep one 4/5-star primary and at
-most one genuinely distinct 3-star alternate; 3 stars are not a holding bucket
-for every technically usable frame. For flower fields, value location context,
+Group near-duplicates before rating. Keep the 4/5 bar strict, but allow multiple
+3-star alternatives when expression, pose, sharpness, framing, or timing has
+meaningful differences. Demote only repeats with no comparison value. For flower fields, value location context,
 rows/lines, sky, distant mountains, and travel atmosphere instead of selecting
 only close-up flowers or insects.
 
@@ -96,6 +96,14 @@ reference, not automated behavior.
 
 After writing sidecars, the user must select the RAW files in Lightroom Classic
 and run `Metadata > Read Metadata from Files`.
+
+For all 3-5-star portraits, generate individual HIF/HEIF/HEIC review JPEGs with
+`mt subject-plan`. The Agent must open every preview and write separate local
+Exposure, Contrast, Highlights, Shadows, Whites, and Blacks values or an
+explicit all-zero `skip`. `mt subject-apply` owns only the correction named
+`Media Toolkit Subject Lift`; Lightroom computes its Select Subject pixels.
+Run `Update All` in Lightroom for pending AI masks and leave face retouching to
+the user's later manual pass.
 
 ## Contact sheets and cleanup
 
