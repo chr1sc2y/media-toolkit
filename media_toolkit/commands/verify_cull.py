@@ -15,8 +15,6 @@ TEMP_ARTIFACT_NAMES = {
 }
 ALLOWED_CONTACT_SHEETS = {
     Path("_contact_sheet.jpg"),
-    Path("portrait/_contact_sheet.jpg"),
-    Path("panorama/_contact_sheet.jpg"),
 }
 HIF_EXTENSIONS = {".hif", ".heif", ".heic"}
 
@@ -168,21 +166,34 @@ def numbered_children(directory: Path) -> list[Path]:
     )
 
 
+def allowed_contact_sheet(path: Path) -> bool:
+    if path in ALLOWED_CONTACT_SHEETS:
+        return True
+    parts = path.parts
+    return (
+        len(parts) == 3
+        and parts[0] in {"portrait", "panorama"}
+        and parts[1].isdigit()
+        and parts[2] == "_contact_sheet.jpg"
+    )
+
+
 def check_contact_sheets(report: VerificationReport, root: Path) -> None:
     if (root / "hif").exists() and not (root / "_contact_sheet.jpg").exists():
         report.issues.append("missing root _contact_sheet.jpg")
 
-    portrait_dir = root / "portrait"
-    if numbered_children(portrait_dir) and not (portrait_dir / "_contact_sheet.jpg").exists():
-        report.issues.append("missing portrait/_contact_sheet.jpg")
-
-    panorama_dir = root / "panorama"
-    if numbered_children(panorama_dir) and not (panorama_dir / "_contact_sheet.jpg").exists():
-        report.issues.append("missing panorama/_contact_sheet.jpg")
+    for group_kind in ("portrait", "panorama"):
+        for group_dir in numbered_children(root / group_kind):
+            if (group_dir / "hif").is_dir() and not (
+                group_dir / "_contact_sheet.jpg"
+            ).is_file():
+                report.issues.append(
+                    f"missing {group_kind}/{group_dir.name}/_contact_sheet.jpg"
+                )
 
     for path in sorted(root.rglob("*contact_sheet*.jpg")):
         rel = path.relative_to(root)
-        if rel not in ALLOWED_CONTACT_SHEETS:
+        if not allowed_contact_sheet(rel):
             report.issues.append(f"redundant contact sheet remains: {rel}")
 
 

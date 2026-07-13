@@ -111,12 +111,13 @@ whose registered plan style is incompatible with the reviewed plan.
 
 ```bash
 mt contact-sheet "<photo-dir>" --hif-only --exclude-dir portrait --exclude-dir panorama --output /tmp/mt-root-sheet --final-overview "<photo-dir>/_contact_sheet.jpg"
-mt contact-sheet "<photo-dir>/portrait" --hif-only --output /tmp/mt-portrait-sheet --final-overview "<photo-dir>/portrait/_contact_sheet.jpg" --section-by-numbered-dir --section-prefix Portrait
-mt contact-sheet "<photo-dir>/panorama" --hif-only --output /tmp/mt-panorama-sheet --final-overview "<photo-dir>/panorama/_contact_sheet.jpg" --section-by-numbered-dir --section-prefix Panorama
+mt contact-sheet "<photo-dir>/portrait/<group>" --hif-only --output "/tmp/mt-portrait-<group>-sheet" --final-overview "<photo-dir>/portrait/<group>/_contact_sheet.jpg"
+mt contact-sheet "<photo-dir>/panorama/<group>" --hif-only --output "/tmp/mt-panorama-<group>-sheet" --final-overview "<photo-dir>/panorama/<group>/_contact_sheet.jpg"
 ```
 
-Run only the portrait/panorama commands when those directories exist. Remove
-temporary plan/stat files only after the XMP result has passed verification.
+Repeat the matching command for every numeric group. The portrait/panorama
+organizers do this automatically after moving files. Remove temporary plan/stat
+files only after the XMP result has passed verification.
 
 6. Verify strictly:
 

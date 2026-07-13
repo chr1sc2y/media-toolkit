@@ -73,6 +73,13 @@ class RepositorySkillTests(unittest.TestCase):
         self.assertIn("do not hand-move", text)
         self.assertNotIn("4-5 broad top-level scene categories", text)
 
+    def test_initial_cull_documents_group_local_contact_sheets(self) -> None:
+        text = (SKILLS_ROOT / "initial-cull/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn('portrait/<group>/_contact_sheet.jpg', text)
+        self.assertIn('panorama/<group>/_contact_sheet.jpg', text)
+        self.assertNotIn('portrait/_contact_sheet.jpg', text)
+        self.assertNotIn('panorama/_contact_sheet.jpg', text)
+
     def test_extract_skill_has_safe_plan_apply_and_separate_delete_gate(self) -> None:
         text = (SKILLS_ROOT / "extract-feature/SKILL.md").read_text(encoding="utf-8")
         self.assertIn('mt preflight-run finalize "<photo-dir>"', text)

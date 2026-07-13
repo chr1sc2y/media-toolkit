@@ -32,6 +32,15 @@ def run_command(command: list[str]) -> None:
     manifest_organize.run_command(command)
 
 
+def numbered_group_dirs(directory: Path) -> list[Path]:
+    if not directory.is_dir():
+        return []
+    return sorted(
+        (path for path in directory.iterdir() if path.is_dir() and path.name.isdigit()),
+        key=lambda path: int(path.name),
+    )
+
+
 def rebuild_contact_sheets(
     root: Path,
     group_kind: str,
@@ -58,22 +67,22 @@ def rebuild_contact_sheets(
         )
 
         group_dir = root / group_kind
-        if group_dir.exists():
+        for numbered_dir in numbered_group_dirs(group_dir):
             runner(
                 [
                     "mt",
                     "contact-sheet",
-                    str(group_dir),
+                    str(numbered_dir),
                     "--hif-only",
                     "--output",
-                    str(temp_dir / group_kind),
+                    str(temp_dir / group_kind / numbered_dir.name),
                     "--final-overview",
-                    str(group_dir / "_contact_sheet.jpg"),
-                    "--section-by-numbered-dir",
-                    "--section-prefix",
-                    section_prefix,
+                    str(numbered_dir / "_contact_sheet.jpg"),
                 ]
             )
+        legacy_sheet = group_dir / "_contact_sheet.jpg"
+        if legacy_sheet.exists():
+            legacy_sheet.unlink()
 
 
 def summarize(entries: list[ManifestEntry], group_kind: str) -> str:

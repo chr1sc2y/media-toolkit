@@ -68,20 +68,21 @@ class PanoramaOrganizeTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "panorama/1/hif").mkdir(parents=True)
+            (root / "panorama/3/hif").mkdir(parents=True)
 
             with patch.object(panorama_organize, "run_command") as run_command:
                 panorama_organize.rebuild_contact_sheets(root)
 
             commands = [call.args[0] for call in run_command.call_args_list]
-            self.assertEqual(len(commands), 2)
+            self.assertEqual(len(commands), 3)
             self.assertIn("--exclude-dir", commands[0])
             self.assertIn("portrait", commands[0])
             self.assertIn("panorama", commands[0])
             self.assertIn(str(root / "_contact_sheet.jpg"), commands[0])
-            self.assertIn("--section-by-numbered-dir", commands[1])
-            self.assertIn("--section-prefix", commands[1])
-            self.assertIn("Panorama", commands[1])
-            self.assertIn(str(root / "panorama/_contact_sheet.jpg"), commands[1])
+            for group, command in zip(("1", "3"), commands[1:]):
+                self.assertEqual(command[2], str(root / "panorama" / group))
+                self.assertIn(str(root / "panorama" / group / "_contact_sheet.jpg"), command)
+                self.assertNotIn("--section-by-numbered-dir", command)
 
     def test_dry_run_does_not_move_files_or_rebuild_sheets(self):
         with TemporaryDirectory() as tmp:

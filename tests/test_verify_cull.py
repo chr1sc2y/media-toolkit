@@ -16,8 +16,8 @@ class VerifyCullTest(unittest.TestCase):
             self._touch_pair(root / "portrait/1/raw", root / "portrait/1/hif", "DSC0002")
             self._touch_pair(root / "panorama/1/raw", root / "panorama/1/hif", "DSC0003")
             (root / "_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
-            (root / "portrait/_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
-            (root / "panorama/_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
+            (root / "portrait/1/_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
+            (root / "panorama/1/_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
 
             report = verify_cull.verify_directory(root)
 
@@ -62,7 +62,29 @@ class VerifyCullTest(unittest.TestCase):
             report = verify_cull.verify_directory(root)
 
         self.assertFalse(report.ok)
-        self.assertTrue(any("portrait/_contact_sheet.jpg" in issue for issue in report.issues))
+        self.assertIn("missing portrait/1/_contact_sheet.jpg", report.issues)
+
+    def test_verify_requires_a_sheet_for_every_numbered_group(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._touch_pair(root / "portrait/1/raw", root / "portrait/1/hif", "DSC0001")
+            self._touch_pair(root / "portrait/2/raw", root / "portrait/2/hif", "DSC0002")
+            (root / "portrait/1/_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
+
+            report = verify_cull.verify_directory(root)
+
+        self.assertIn("missing portrait/2/_contact_sheet.jpg", report.issues)
+
+    def test_verify_rejects_legacy_parent_group_sheet(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._touch_pair(root / "portrait/1/raw", root / "portrait/1/hif", "DSC0001")
+            (root / "portrait/1/_contact_sheet.jpg").write_text("sheet", encoding="utf-8")
+            (root / "portrait/_contact_sheet.jpg").write_text("legacy", encoding="utf-8")
+
+            report = verify_cull.verify_directory(root)
+
+        self.assertTrue(any("redundant contact sheet" in issue for issue in report.issues))
 
     def test_verify_fails_on_temporary_review_dirs(self):
         with TemporaryDirectory() as tmp:

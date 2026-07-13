@@ -100,8 +100,8 @@ and run `Metadata > Read Metadata from Files`.
 ## Contact sheets and cleanup
 
 - Root `_contact_sheet.jpg`: ordinary `hif/`, excluding portrait and panorama.
-- `portrait/_contact_sheet.jpg`: portrait groups only, sectioned by number.
-- `panorama/_contact_sheet.jpg`: source sequences only, sectioned by number.
+- `portrait/<group>/_contact_sheet.jpg`: one overview for each portrait group.
+- `panorama/<group>/_contact_sheet.jpg`: one overview for each source sequence.
 - Labels are filenames, without numeric manifest prefixes unless requested.
 - Remove temporary conversion/sheet directories after final overviews succeed.
 - Keep `lr_plan.tsv` and `raw_stats.tsv` until XMP verification passes; then they

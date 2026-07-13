@@ -193,6 +193,10 @@ mt png-to-jpg /path/to/images
 mt batch-report /path/to/photos
 ```
 
+The portrait and panorama organizers generate one overview inside each numeric
+group, such as `portrait/1/_contact_sheet.jpg` or
+`panorama/2/_contact_sheet.jpg`; no aggregate sheet is kept in either parent.
+
 ## Development
 
 ```bash
